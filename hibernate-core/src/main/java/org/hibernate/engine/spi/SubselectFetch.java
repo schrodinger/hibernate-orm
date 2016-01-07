@@ -27,7 +27,7 @@ public class SubselectFetch {
 	private final Map namedParameterLocMap;
 
 	public SubselectFetch(
-			//final String queryString,
+			final String queryString,
 			final String alias,
 			final Loadable loadable,
 			final QueryParameters queryParameters,
@@ -38,14 +38,25 @@ public class SubselectFetch {
 		this.namedParameterLocMap = namedParameterLocMap;
 		this.loadable = loadable;
 		this.alias = alias;
+		this.queryString = queryString;
+	}
 
-		//TODO: ugly here:
+	 /**
+     * Get the part of the filtered SQL starting at "from" and terminating before "order by" if exists.
+     *
+     * @param queryParameters
+     *            the queryParameters of the executed Query
+     * @return a SQL-Statement without select clause.
+     */
+	public static String getQueryString(QueryParameters queryParameters) {
+		// TODO: ugly here:
 		final String queryString = queryParameters.getFilteredSQL();
-		final int fromIndex = getFromIndex( queryString );
-		final int orderByIndex = queryString.lastIndexOf( "order by" );
-		this.queryString = orderByIndex > 0
-				? queryString.substring( fromIndex, orderByIndex )
-				: queryString.substring( fromIndex );
+		int fromIndex = getFromIndex(queryString);
+		int orderByIndex = queryString.lastIndexOf("order by");
+
+		return orderByIndex > 0
+				? queryString.substring(fromIndex, orderByIndex)
+				: queryString.substring(fromIndex);
 	}
 
 	private static int getFromIndex(String queryString) {

@@ -48,16 +48,16 @@ public class SubselectFetch {
      *            the queryParameters of the executed Query
      * @return a SQL-Statement without select clause.
      */
-    public static String getQueryString(QueryParameters queryParameters) {
-        // TODO: ugly here:
-        final String queryString = queryParameters.getFilteredSQL();
-        int fromIndex = queryString.indexOf(" from ");
-        int orderByIndex = queryString.lastIndexOf("order by");
+	public static String getQueryString(QueryParameters queryParameters) {
+		// TODO: ugly here:
+		final String queryString = queryParameters.getFilteredSQL();
+		int fromIndex = queryString.indexOf(" from ");
+		int orderByIndex = queryString.lastIndexOf("order by");
 
-        return orderByIndex > 0
+		return orderByIndex > 0
 				? queryString.substring(fromIndex, orderByIndex)
 				: queryString.substring(fromIndex);
-    }
+	}
 
 	private static int getFromIndex(String queryString) {
 		int index = queryString.indexOf( FROM_STRING );

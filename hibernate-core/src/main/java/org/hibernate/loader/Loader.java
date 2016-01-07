@@ -956,9 +956,9 @@ public abstract class Loader {
 		final EntityKey optionalObjectKey = getOptionalObjectKey( queryParameters, session );
 		final LockMode[] lockModesArray = getLockModes( queryParameters.getLockOptions() );
 		final boolean createSubselects = isSubselectLoadingEnabled();
-		final List subselectResultKeys = createSubselects ? new ArrayList() : null;
+		final List<EntityKey[]> subselectResultKeys = createSubselects ? new ArrayList<EntityKey[]>() : null;
 		final ArrayList hydratedObjects = entitySpan == 0 ? null : new ArrayList( entitySpan * 10 );
-		final List results = new ArrayList();
+		final List<Object> results = new ArrayList<Object>();
 
 		handleEmptyCollections( queryParameters.getCollectionKeys(), rs, session );
 		EntityKey[] keys = new EntityKey[entitySpan]; //we can reuse it for each row
@@ -1034,6 +1034,7 @@ public abstract class Loader {
 
 			Map namedParameterLocMap = buildNamedParameterLocMap( queryParameters );
 
+			final String queryString = SubselectFetch.getQueryString( queryParameters );
 			final Loadable[] loadables = getEntityPersisters();
 			final String[] aliases = getAliases();
 			for ( Object key : keys ) {
@@ -1043,7 +1044,7 @@ public abstract class Loader {
 					if ( rowKeys[i] != null && loadables[i].hasSubselectLoadableCollections() ) {
 
 						SubselectFetch subselectFetch = new SubselectFetch(
-								//getSQLString(),
+								queryString,
 								aliases[i],
 								loadables[i],
 								queryParameters,

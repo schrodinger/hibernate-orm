@@ -51,7 +51,7 @@ public class SubselectFetch {
 	public static String getQueryString(QueryParameters queryParameters) {
 		// TODO: ugly here:
 		final String queryString = queryParameters.getFilteredSQL();
-		int fromIndex = queryString.indexOf(" from ");
+		int fromIndex = getFromIndex(queryString);
 		int orderByIndex = queryString.lastIndexOf("order by");
 
 		return orderByIndex > 0

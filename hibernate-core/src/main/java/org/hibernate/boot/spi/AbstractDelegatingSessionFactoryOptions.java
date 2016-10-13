@@ -7,6 +7,7 @@
 package org.hibernate.boot.spi;
 
 import java.util.Map;
+import java.util.TimeZone;
 
 import org.hibernate.ConnectionReleaseMode;
 import org.hibernate.CustomEntityDirtinessStrategy;
@@ -26,6 +27,7 @@ import org.hibernate.dialect.function.SQLFunction;
 import org.hibernate.hql.spi.id.MultiTableBulkIdStrategy;
 import org.hibernate.loader.BatchFetchStyle;
 import org.hibernate.proxy.EntityNotFoundDelegate;
+import org.hibernate.resource.jdbc.spi.PhysicalConnectionHandlingMode;
 import org.hibernate.resource.jdbc.spi.StatementInspector;
 import org.hibernate.tuple.entity.EntityTuplizerFactory;
 
@@ -34,7 +36,8 @@ import org.hibernate.tuple.entity.EntityTuplizerFactory;
  *
  * @author Steve Ebersole
  */
-public abstract class AbstractDelegatingSessionFactoryOptions implements SessionFactoryOptions {
+@SuppressWarnings("unused")
+public class AbstractDelegatingSessionFactoryOptions implements SessionFactoryOptions {
 	private final SessionFactoryOptions delegate;
 
 	public AbstractDelegatingSessionFactoryOptions(SessionFactoryOptions delegate) {
@@ -44,6 +47,16 @@ public abstract class AbstractDelegatingSessionFactoryOptions implements Session
 	@Override
 	public StandardServiceRegistry getServiceRegistry() {
 		return delegate.getServiceRegistry();
+	}
+
+	@Override
+	public boolean isJpaBootstrap() {
+		return delegate.isJpaBootstrap();
+	}
+
+	@Override
+	public boolean isJtaTransactionAccessEnabled() {
+		return delegate.isJtaTransactionAccessEnabled();
 	}
 
 	@Override
@@ -197,6 +210,21 @@ public abstract class AbstractDelegatingSessionFactoryOptions implements Session
 	}
 
 	@Override
+	public boolean isProcedureParameterNullPassingEnabled() {
+		return delegate.isProcedureParameterNullPassingEnabled();
+	}
+
+	@Override
+	public boolean isAllowOutOfTransactionUpdateOperations() {
+		return delegate.isAllowOutOfTransactionUpdateOperations();
+	}
+
+	@Override
+	public boolean isReleaseResourcesOnCloseEnabled() {
+		return delegate.isReleaseResourcesOnCloseEnabled();
+	}
+
+	@Override
 	public boolean isSecondLevelCacheEnabled() {
 		return delegate.isSecondLevelCacheEnabled();
 	}
@@ -272,6 +300,12 @@ public abstract class AbstractDelegatingSessionFactoryOptions implements Session
 	}
 
 	@Override
+	public PhysicalConnectionHandlingMode getPhysicalConnectionHandlingMode() {
+		return delegate.getPhysicalConnectionHandlingMode();
+	}
+
+	@Override
+	@SuppressWarnings("deprecation")
 	public ConnectionReleaseMode getConnectionReleaseMode() {
 		return delegate.getConnectionReleaseMode();
 	}
@@ -309,5 +343,15 @@ public abstract class AbstractDelegatingSessionFactoryOptions implements Session
 	@Override
 	public boolean isPreferUserTransaction() {
 		return delegate.isPreferUserTransaction();
+	}
+
+	@Override
+	public Class<? extends Interceptor> getStatelessInterceptorImplementor() {
+		return delegate.getStatelessInterceptorImplementor();
+	}
+
+	@Override
+	public TimeZone getJdbcTimeZone() {
+		return delegate.getJdbcTimeZone();
 	}
 }

@@ -14,7 +14,9 @@ import javax.persistence.ParameterMode;
 import javax.persistence.TemporalType;
 
 import org.hibernate.engine.jdbc.cursor.spi.RefCursorSupport;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.jdbc.env.spi.ExtractedDatabaseMetaData;
+import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.procedure.ParameterBind;
 import org.hibernate.procedure.ParameterMisuseException;
 import org.hibernate.procedure.spi.ParameterRegistrationImplementor;
@@ -23,6 +25,7 @@ import org.hibernate.type.CalendarDateType;
 import org.hibernate.type.CalendarTimeType;
 import org.hibernate.type.CalendarType;
 import org.hibernate.type.ProcedureParameterExtractionAware;
+import org.hibernate.type.ProcedureParameterNamedBinder;
 import org.hibernate.type.Type;
 
 import org.jboss.logging.Logger;
@@ -44,6 +47,7 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 	private final Class<T> type;
 
 	private ParameterBindImpl bind;
+	private boolean passNulls;
 
 	private int startIndex;
 	private Type hibernateType;
@@ -56,8 +60,9 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 			ProcedureCallImpl procedureCall,
 			Integer position,
 			ParameterMode mode,
-			Class<T> type) {
-		this( procedureCall, position, null, mode, type );
+			Class<T> type,
+			boolean initialPassNullsSetting) {
+		this( procedureCall, position, null, mode, type, initialPassNullsSetting );
 	}
 
 	protected AbstractParameterRegistrationImpl(
@@ -65,8 +70,9 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 			Integer position,
 			ParameterMode mode,
 			Class<T> type,
-			Type hibernateType) {
-		this( procedureCall, position, null, mode, type, hibernateType );
+			Type hibernateType,
+			boolean initialPassNullsSetting) {
+		this( procedureCall, position, null, mode, type, hibernateType, initialPassNullsSetting );
 	}
 
 
@@ -76,8 +82,9 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 			ProcedureCallImpl procedureCall,
 			String name,
 			ParameterMode mode,
-			Class<T> type) {
-		this( procedureCall, null, name, mode, type );
+			Class<T> type,
+			boolean initialPassNullsSetting) {
+		this( procedureCall, null, name, mode, type, initialPassNullsSetting );
 	}
 
 	protected AbstractParameterRegistrationImpl(
@@ -85,8 +92,9 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 			String name,
 			ParameterMode mode,
 			Class<T> type,
-			Type hibernateType) {
-		this( procedureCall, null, name, mode, type, hibernateType );
+			Type hibernateType,
+			boolean initialPassNullsSetting) {
+		this( procedureCall, null, name, mode, type, hibernateType, initialPassNullsSetting );
 	}
 
 
@@ -98,7 +106,8 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 			String name,
 			ParameterMode mode,
 			Class<T> type,
-			Type hibernateType) {
+			Type hibernateType,
+			boolean initialPassNullsSetting) {
 		this.procedureCall = procedureCall;
 
 		this.position = position;
@@ -111,6 +120,7 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 			return;
 		}
 
+		this.passNulls = initialPassNullsSetting;
 		setHibernateType( hibernateType );
 	}
 
@@ -119,18 +129,20 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 			Integer position,
 			String name,
 			ParameterMode mode,
-			Class<T> type) {
+			Class<T> type,
+			boolean initialPassNullsSetting) {
 		this(
 				procedureCall,
 				position,
 				name,
 				mode,
 				type,
-				procedureCall.getSession().getFactory().getTypeResolver().heuristicType( type.getName() )
+				procedureCall.getSession().getFactory().getTypeResolver().heuristicType( type.getName() ),
+				initialPassNullsSetting
 		);
 	}
 
-	protected SessionImplementor session() {
+	protected SharedSessionContractImplementor session() {
 		return procedureCall.getSession();
 	}
 
@@ -152,6 +164,16 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 	@Override
 	public ParameterMode getMode() {
 		return mode;
+	}
+
+	@Override
+	public boolean isPassNullsEnabled() {
+		return passNulls;
+	}
+
+	@Override
+	public void enablePassingNulls(boolean enabled) {
+		this.passNulls = enabled;
 	}
 
 	@Override
@@ -251,27 +273,73 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 						);
 					}
 				}
-				for ( int i = 0; i < sqlTypesToUse.length; i++ ) {
-					statement.registerOutParameter( startIndex + i, sqlTypesToUse[i] );
+				// TODO: sqlTypesToUse.length > 1 does not seem to have a working use case (HHH-10769).
+				// The idea is that an embeddable/custom type can have more than one column values
+				// that correspond with embeddable/custom attribute value. This does not seem to
+				// be working yet. For now, if sqlTypesToUse.length > 1, then register
+				// the out parameters by position (since we only have one name).
+				// This will cause a failure if there are other parameters bound by
+				// name and the dialect does not support "mixed" named/positional parameters;
+				// e.g., Oracle.
+				if ( sqlTypesToUse.length == 1 &&
+						procedureCall.getParameterStrategy() == ParameterStrategy.NAMED &&
+						canDoNameParameterBinding() ) {
+					statement.registerOutParameter( getName(), sqlTypesToUse[0] );
+				}
+				else {
+					for ( int i = 0; i < sqlTypesToUse.length; i++ ) {
+						statement.registerOutParameter( startIndex + i, sqlTypesToUse[i] );
+					}
 				}
 			}
 
 			if ( mode == ParameterMode.INOUT || mode == ParameterMode.IN ) {
 				if ( bind == null || bind.getValue() == null ) {
-					// the user did not bind a value to the parameter being processed.  That might be ok *if* the
-					// procedure as defined in the database defines a default value for that parameter.
+					// the user did not bind a value to the parameter being processed.  This is the condition
+					// defined by `passNulls` and that value controls what happens here.  If `passNulls` is
+					// {@code true} we will bind the NULL value into the statement; if `passNulls` is
+					// {@code false} we will not.
+					//
 					// Unfortunately there is not a way to reliably know through JDBC metadata whether a procedure
-					// parameter defines a default value.  So we simply allow the procedure execution to happen
-					// assuming that the database will complain appropriately if not setting the given parameter
-					// bind value is an error.
-					log.debugf(
-							"Stored procedure [%s] IN/INOUT parameter [%s] not bound; assuming procedure defines default value",
-							procedureCall.getProcedureName(),
-							this
-					);
+					// parameter defines a default value.  Deferring to that information would be the best option
+					if ( passNulls ) {
+						log.debugf(
+								"Stored procedure [%s] IN/INOUT parameter [%s] not bound and `passNulls` was set to true; binding NULL",
+								procedureCall.getProcedureName(),
+								this
+						);
+						if ( this.procedureCall.getParameterStrategy() == ParameterStrategy.NAMED && canDoNameParameterBinding() ) {
+							((ProcedureParameterNamedBinder) typeToUse).nullSafeSet(
+									statement,
+									null,
+									this.getName(),
+									session()
+							);
+						}
+						else {
+							typeToUse.nullSafeSet( statement, null, startIndex, session() );
+						}
+					}
+					else {
+						log.debugf(
+								"Stored procedure [%s] IN/INOUT parameter [%s] not bound and `passNulls` was set to false; assuming procedure defines default value",
+								procedureCall.getProcedureName(),
+								this
+						);
+					}
 				}
 				else {
-					typeToUse.nullSafeSet( statement, bind.getValue(), startIndex, session() );
+					if ( this.procedureCall.getParameterStrategy() == ParameterStrategy.NAMED && canDoNameParameterBinding()) {
+						((ProcedureParameterNamedBinder) typeToUse).nullSafeSet(
+								statement,
+								bind.getValue(),
+								this.getName(),
+								session()
+						);
+					}
+					else {
+						typeToUse.nullSafeSet( statement, bind.getValue(), startIndex, session() );
+					}
 				}
 			}
 		}
@@ -288,6 +356,19 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 						.registerRefCursorParameter( statement, startIndex );
 			}
 		}
+	}
+
+	private boolean canDoNameParameterBinding() {
+		final ExtractedDatabaseMetaData databaseMetaData = session()
+				.getJdbcCoordinator()
+				.getJdbcSessionOwner()
+				.getJdbcSessionContext()
+				.getServiceRegistry().getService( JdbcEnvironment.class )
+				.getExtractedDatabaseMetaData();
+		return
+				databaseMetaData.supportsNamedParameters() &&
+				ProcedureParameterNamedBinder.class.isInstance( hibernateType )
+						&& ((ProcedureParameterNamedBinder) hibernateType).canDoSetting();
 	}
 
 	public int[] getSqlTypes() {
@@ -308,12 +389,37 @@ public abstract class AbstractParameterRegistrationImpl<T> implements ParameterR
 			throw new ParameterMisuseException( "REF_CURSOR parameters should be accessed via results" );
 		}
 
+		// TODO: sqlTypesToUse.length > 1 does not seem to have a working use case (HHH-10769).
+		// For now, if sqlTypes.length > 1 with a named parameter, then extract
+		// parameter values by position (since we only have one name).
+		final boolean useNamed = sqlTypes.length == 1 &&
+				procedureCall.getParameterStrategy() == ParameterStrategy.NAMED &&
+				canDoNameParameterBinding();
+
 		try {
 			if ( ProcedureParameterExtractionAware.class.isInstance( hibernateType ) ) {
-				return (T) ( (ProcedureParameterExtractionAware) hibernateType ).extract( statement, startIndex, session() );
+				if ( useNamed ) {
+					return (T) ( (ProcedureParameterExtractionAware) hibernateType ).extract(
+							statement,
+							new String[] { getName() },
+							session()
+					);
+				}
+				else {
+					return (T) ( (ProcedureParameterExtractionAware) hibernateType ).extract(
+							statement,
+							startIndex,
+							session()
+					);
+				}
 			}
 			else {
-				return (T) statement.getObject( startIndex );
+				if ( useNamed ) {
+					return (T) statement.getObject( name );
+				}
+				else {
+					return (T) statement.getObject( startIndex );
+				}
 			}
 		}
 		catch (SQLException e) {

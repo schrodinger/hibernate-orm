@@ -207,7 +207,7 @@ public class PersistentAttributesHelper {
 				PersistentAttributesHelper.hasAnnotation( persistentField, ManyToMany.class );
 	}
 
-	public static String getMappedBy(CtField persistentField, CtClass targetEntity, EnhancementContext context) {
+	public static String getMappedBy(CtField persistentField, CtClass targetEntity, EnhancementContext context) throws NotFoundException {
 		final String local = getMappedByFromAnnotation( persistentField );
 		return local.isEmpty() ? getMappedByFromTargetEntity( persistentField, targetEntity, context ) : local;
 	}
@@ -233,10 +233,12 @@ public class PersistentAttributesHelper {
 	private static String getMappedByFromTargetEntity(
 			CtField persistentField,
 			CtClass targetEntity,
-			EnhancementContext context) {
+			EnhancementContext context) throws NotFoundException {
 		// get mappedBy value by searching in the fields of the target entity class
 		for ( CtField f : targetEntity.getDeclaredFields() ) {
-			if ( context.isPersistentField( f ) && getMappedByFromAnnotation( f ).equals( persistentField.getName() ) ) {
+			if ( context.isPersistentField( f )
+					&& getMappedByFromAnnotation( f ).equals( persistentField.getName() )
+					&& isAssignable( persistentField.getDeclaringClass(), inferFieldTypeName( f ) ) ) {
 				log.debugf(
 						"mappedBy association for field [%s#%s] is [%s#%s]",
 						persistentField.getDeclaringClass().getName(),
@@ -308,7 +310,7 @@ public class PersistentAttributesHelper {
 
 	private static String inferFieldTypeName(CtField field) {
 		try {
-			if ( field.getFieldInfo().getAttribute( SignatureAttribute.tag ) == null ){
+			if ( field.getFieldInfo2().getAttribute( SignatureAttribute.tag ) == null ) {
 				return field.getType().getName();
 			}
 			return inferGenericTypeName(
@@ -326,7 +328,7 @@ public class PersistentAttributesHelper {
 
 	private static String inferMethodTypeName(CtMethod method) {
 		try {
-			if ( method.getMethodInfo().getAttribute( SignatureAttribute.tag ) == null ){
+			if ( method.getMethodInfo2().getAttribute( SignatureAttribute.tag ) == null ) {
 				return method.getReturnType().getName();
 			}
 			return inferGenericTypeName(
@@ -374,6 +376,16 @@ public class PersistentAttributesHelper {
 					return true;
 				}
 			}
+		}
+		catch (NotFoundException e) {
+			// keep going
+		}
+		return false;
+	}
+
+	public static boolean isAssignable(CtField thisCtField, String targetClassName) {
+		try {
+			return isAssignable( thisCtField.getType(), targetClassName );
 		}
 		catch (NotFoundException e) {
 			// keep going

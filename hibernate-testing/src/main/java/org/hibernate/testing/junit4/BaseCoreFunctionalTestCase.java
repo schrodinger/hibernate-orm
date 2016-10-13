@@ -35,8 +35,7 @@ import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.config.ConfigurationHelper;
 import org.hibernate.jdbc.AbstractReturningWork;
 import org.hibernate.jdbc.Work;
-import org.hibernate.resource.transaction.TransactionCoordinator;
-import org.hibernate.resource.transaction.spi.TransactionStatus;
+import org.hibernate.resource.transaction.spi.TransactionCoordinator;
 
 import org.hibernate.testing.AfterClassOnce;
 import org.hibernate.testing.BeforeClassOnce;
@@ -47,6 +46,7 @@ import org.hibernate.testing.cache.CachingRegionFactory;
 import org.junit.After;
 import org.junit.Before;
 
+import static org.hibernate.testing.transaction.TransactionUtil.doInHibernate;
 import static org.junit.Assert.fail;
 
 /**
@@ -93,7 +93,7 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 	}
 
 
-	// before/after test class ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// beforeQuery/afterQuery test class ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	@BeforeClassOnce
 	@SuppressWarnings( {"UnusedDeclaration"})
@@ -313,7 +313,7 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 	}
 
 
-	// before/after each test ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	// beforeQuery/afterQuery each test ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 	@Before
 	public final void beforeTest() throws Exception {
@@ -373,20 +373,22 @@ public abstract class BaseCoreFunctionalTestCase extends BaseUnitTestCase {
 		return false;
 	}
 
+	protected boolean isCleanupTestDataUsingBulkDelete() {
+		return false;
+	}
+
 	protected void cleanupTestData() throws Exception {
-		Session s = openSession();
-		Transaction transaction = s.beginTransaction();
-		try {
-			s.createQuery( "delete from java.lang.Object" ).executeUpdate();
-			transaction.commit();
+		if(isCleanupTestDataUsingBulkDelete()) {
+			doInHibernate( this::sessionFactory, s -> {
+				s.createQuery( "delete from java.lang.Object" ).executeUpdate();
+			} );
 		}
-		catch (Exception e) {
-			if ( transaction.getStatus().canRollback() ) {
-				transaction.rollback();
-			}
-		}
-		finally {
-			s.close();
+		else {
+			// Because of https://hibernate.atlassian.net/browse/HHH-5529,
+			// we can'trely on a Bulk Delete query which will not clear the link tables in @ElementCollection or unidirectional collections
+			doInHibernate( this::sessionFactory, s -> {
+				s.createQuery( "from java.lang.Object" ).list().forEach( s::remove );
+			} );
 		}
 	}
 

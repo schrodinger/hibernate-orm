@@ -17,7 +17,6 @@ import org.hibernate.exception.GenericJDBCException;
 import org.hibernate.exception.LockAcquisitionException;
 
 import org.hibernate.testing.SkipForDialect;
-import org.hibernate.testing.SkipForDialects;
 import org.hibernate.testing.TestForIssue;
 import org.hibernate.testing.async.Executable;
 import org.hibernate.testing.async.TimedExecutor;
@@ -33,10 +32,8 @@ import static org.junit.Assert.fail;
  * @author Steve Ebersole
  */
 @TestForIssue( jiraKey = "HHH-5275")
-@SkipForDialects( {
 @SkipForDialect(value=SybaseASE15Dialect.class, strictMatching=true,
 		comment = "skip this test on Sybase ASE 15.5, but run it on 15.7, see HHH-6820")
-})
 public class LockModeTest extends BaseCoreFunctionalTestCase {
 	private Long id;
 

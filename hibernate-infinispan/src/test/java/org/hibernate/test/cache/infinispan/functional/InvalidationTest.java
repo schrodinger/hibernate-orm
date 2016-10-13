@@ -1,25 +1,28 @@
 package org.hibernate.test.cache.infinispan.functional;
 
-import org.hibernate.PessimisticLockException;
-import org.hibernate.cache.infinispan.InfinispanRegionFactory;
-import org.hibernate.cache.infinispan.entity.EntityRegionImpl;
-import org.hibernate.cache.spi.Region;
-import org.hibernate.test.cache.infinispan.functional.entities.Item;
-import org.hibernate.testing.TestForIssue;
-import org.infinispan.AdvancedCache;
-import org.infinispan.commands.read.GetKeyValueCommand;
-import org.infinispan.context.InvocationContext;
-import org.infinispan.interceptors.base.BaseCustomInterceptor;
-import org.infinispan.util.logging.Log;
-import org.infinispan.util.logging.LogFactory;
-import org.junit.Test;
-
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.hibernate.PessimisticLockException;
+import org.hibernate.cache.infinispan.InfinispanRegionFactory;
+import org.hibernate.cache.infinispan.entity.EntityRegionImpl;
+import org.hibernate.cache.infinispan.util.InfinispanMessageLogger;
+import org.hibernate.cache.spi.Region;
+
+import org.hibernate.testing.TestForIssue;
+import org.hibernate.test.cache.infinispan.functional.entities.Item;
+import org.hibernate.test.cache.infinispan.util.TestInfinispanRegionFactory;
+import org.junit.Test;
+
+import org.infinispan.AdvancedCache;
+import org.infinispan.commands.read.GetKeyValueCommand;
+import org.infinispan.context.InvocationContext;
+import org.infinispan.interceptors.base.BaseCustomInterceptor;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -31,11 +34,17 @@ import static org.junit.Assert.assertNull;
  * @author Radim Vansa &lt;rvansa@redhat.com&gt;
  */
 public class InvalidationTest extends SingleNodeTest {
-   static final Log log = LogFactory.getLog(ReadOnlyTest.class);
+   static final InfinispanMessageLogger log = InfinispanMessageLogger.Provider.getLog(ReadOnlyTest.class);
 
    @Override
    public List<Object[]> getParameters() {
       return Arrays.asList(TRANSACTIONAL, READ_WRITE_INVALIDATION);
+   }
+
+   @Override
+   protected void addSettings(Map settings) {
+      super.addSettings(settings);
+      settings.put(TestInfinispanRegionFactory.PENDING_PUTS_SIMPLE, false);
    }
 
    @Test
@@ -54,7 +63,7 @@ public class InvalidationTest extends SingleNodeTest {
       HookInterceptor hook = new HookInterceptor();
 
       AdvancedCache pendingPutsCache = entityCache.getCacheManager().getCache(
-            entityCache.getName() + "-" + InfinispanRegionFactory.PENDING_PUTS_CACHE_NAME).getAdvancedCache();
+            entityCache.getName() + "-" + InfinispanRegionFactory.DEF_PENDING_PUTS_RESOURCE).getAdvancedCache();
       pendingPutsCache.addInterceptor(hook, 0);
       AtomicBoolean getThreadBlockedInDB = new AtomicBoolean(false);
 
@@ -82,8 +91,8 @@ public class InvalidationTest extends SingleNodeTest {
       Thread getThread = new Thread(() -> {
          try {
             withTxSession(s -> {
-               // DB load should happen before the record is deleted,
-               // putFromLoad should happen after deleteThread ends
+               // DB load should happen beforeQuery the record is deleted,
+               // putFromLoad should happen afterQuery deleteThread ends
                Item loadedItem = s.get(Item.class, item.getId());
                if (getThreadBlockedInDB.get()) {
                   assertNull(loadedItem);

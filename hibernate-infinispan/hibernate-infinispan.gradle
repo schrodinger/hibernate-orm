@@ -13,11 +13,11 @@ if ( project.hasProperty( 'overrideInfinispanVersionForTesting' ) ) {
     configurations.testRuntime.resolutionStrategy.force 'org.infinispan:infinispan-core:' + overrideInfinispanVersionForTesting
 }
 
+apply plugin: 'java'
+
 dependencies {
     compile project( ':hibernate-core' )
     compile( libraries.infinispan )
-
-    provided( libraries.jta )
 
     testCompile project( ':hibernate-testing' )
     testCompile( libraries.infinispan_test )
@@ -26,6 +26,31 @@ dependencies {
     testCompile( libraries.jnp_server )
     testCompile( libraries.mockito )
     testCompile ('mysql:mysql-connector-java:5.1.17')
+
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // Java 9 ftw!
+    if ( JavaVersion.current().isJava9Compatible() ) {
+        // The JDK used to run Gradle is Java 9+, and we assume that that is the same
+        //		JDK for executing tasks
+        compile( 'com.sun.xml.bind:jaxb-impl:2.2.11' )
+        compile( 'org.glassfish.jaxb:jaxb-xjc:2.2.11' )
+        compile( 'org.jvnet.jaxb2_commons:jaxb2-basics:0.11.0' )
+        compile( 'org.jvnet.jaxb2_commons:jaxb2-basics-ant:0.11.0' )
+        compile( 'javax:javaee-api:7.0' )
+
+        testCompile( 'com.sun.xml.bind:jaxb-impl:2.2.11' )
+        testCompile( 'org.glassfish.jaxb:jaxb-xjc:2.2.11' )
+        testCompile( 'org.jvnet.jaxb2_commons:jaxb2-basics:0.11.0' )
+        testCompile( 'org.jvnet.jaxb2_commons:jaxb2-basics-ant:0.11.0' )
+        testCompile( 'javax:javaee-api:7.0' )
+
+        testRuntime( 'com.sun.xml.bind:jaxb-impl:2.2.11' )
+        testRuntime( 'org.glassfish.jaxb:jaxb-xjc:2.2.11' )
+        testRuntime( 'org.jvnet.jaxb2_commons:jaxb2-basics:0.11.0' )
+        testRuntime( 'org.jvnet.jaxb2_commons:jaxb2-basics-ant:0.11.0' )
+        testRuntime( 'javax:javaee-api:7.0' )
+    }
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 }
 
 mavenPom {
@@ -57,8 +82,14 @@ test {
    systemProperties['jgroups.bind_addr'] = 'localhost'
    // Use Infinispan's test JGroups stack that uses TEST_PING
    systemProperties['hibernate.cache.infinispan.jgroups_cfg'] = '2lc-test-tcp.xml'
-   // systemProperties['log4j.configuration'] = 'file:/log4j/log4j-infinispan.xml'
+   if (project.hasProperty('log4jconfig')) {
+      systemProperties['log4j.configuration'] = log4jconfig
+   }
    enabled = project.hasProperty('testInfinispan')
+   if (project.hasProperty('debugInfinispan')) {
+      jvmArgs += '-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005'
+      enabled = true;
+   }
    // Without this I have trouble running specific test using --tests switch
    doFirst {
       filter.includePatterns.each {

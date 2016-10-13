@@ -49,6 +49,15 @@ public class BasicTypeRegistry implements Serializable {
 		register( CharacterNCharType.INSTANCE );
 		register( UrlType.INSTANCE );
 
+		register( DurationType.INSTANCE );
+		register( InstantType.INSTANCE );
+		register( LocalDateTimeType.INSTANCE );
+		register( LocalDateType.INSTANCE );
+		register( LocalTimeType.INSTANCE );
+		register( OffsetDateTimeType.INSTANCE );
+		register( OffsetTimeType.INSTANCE );
+		register( ZonedDateTimeType.INSTANCE );
+
 		register( DateType.INSTANCE );
 		register( TimeType.INSTANCE );
 		register( TimestampType.INSTANCE );
@@ -65,6 +74,7 @@ public class BasicTypeRegistry implements Serializable {
 
 		register( BinaryType.INSTANCE );
 		register( WrapperBinaryType.INSTANCE );
+		register( RowVersionType.INSTANCE );
 		register( ImageType.INSTANCE );
 		register( CharArrayType.INSTANCE );
 		register( CharacterArrayType.INSTANCE );

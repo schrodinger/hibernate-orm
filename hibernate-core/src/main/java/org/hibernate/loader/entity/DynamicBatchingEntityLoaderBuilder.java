@@ -18,17 +18,20 @@ import java.util.List;
 import org.hibernate.LockMode;
 import org.hibernate.LockOptions;
 import org.hibernate.dialect.pagination.LimitHelper;
+import org.hibernate.engine.spi.EntityEntry;
 import org.hibernate.engine.spi.EntityKey;
 import org.hibernate.engine.spi.LoadQueryInfluencers;
 import org.hibernate.engine.spi.PersistenceContext;
 import org.hibernate.engine.spi.QueryParameters;
 import org.hibernate.engine.spi.RowSelection;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.hibernate.engine.spi.Status;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.internal.util.collections.ArrayHelper;
 import org.hibernate.internal.util.collections.CollectionHelper;
 import org.hibernate.loader.spi.AfterLoadAction;
+import org.hibernate.persister.entity.MultiLoadOptions;
 import org.hibernate.persister.entity.OuterJoinLoadable;
 import org.hibernate.pretty.MessageHelper;
 import org.hibernate.type.Type;
@@ -46,28 +49,156 @@ public class DynamicBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuil
 
 	public static final DynamicBatchingEntityLoaderBuilder INSTANCE = new DynamicBatchingEntityLoaderBuilder();
 
-	@SuppressWarnings("unchecked")
-	public <T, K extends Serializable> List<T> multiLoad(
+	public List multiLoad(
 			OuterJoinLoadable persister,
-			K[] ids,
-			LockOptions lockOptions,
-			Integer explicitBatchSize,
-			boolean sessionCheckingEnabled,
-			SessionImplementor session) {
-		List<T> result = CollectionHelper.arrayList( ids.length );
+			Serializable[] ids,
+			SharedSessionContractImplementor session,
+			MultiLoadOptions loadOptions) {
+		if ( loadOptions.isOrderReturnEnabled() ) {
+			return performOrderedMultiLoad( persister, ids, session, loadOptions );
+		}
+		else {
+			return performUnorderedMultiLoad( persister, ids, session, loadOptions );
+		}
+	}
 
-		if ( sessionCheckingEnabled ) {
+	@SuppressWarnings("unchecked")
+	private List performOrderedMultiLoad(
+			OuterJoinLoadable persister,
+			Serializable[] ids,
+			SharedSessionContractImplementor session,
+			MultiLoadOptions loadOptions) {
+		assert loadOptions.isOrderReturnEnabled();
+
+		final List result = CollectionHelper.arrayList( ids.length );
+
+		final LockOptions lockOptions = (loadOptions.getLockOptions() == null)
+				? new LockOptions( LockMode.NONE )
+				: loadOptions.getLockOptions();
+
+		final int maxBatchSize;
+		if ( loadOptions.getBatchSize() != null && loadOptions.getBatchSize() > 0 ) {
+			maxBatchSize = loadOptions.getBatchSize();
+		}
+		else {
+			maxBatchSize = session.getJdbcServices().getJdbcEnvironment().getDialect().getDefaultBatchLoadSizingStrategy().determineOptimalBatchLoadSize(
+					persister.getIdentifierType().getColumnSpan( session.getFactory() ),
+					ids.length
+			);
+		}
+
+		final List<Serializable> idsInBatch = new ArrayList<>();
+		final List<Integer> elementPositionsLoadedByBatch = new ArrayList<>();
+
+		for ( int i = 0; i < ids.length; i++ ) {
+			final Serializable id = ids[i];
+			final EntityKey entityKey = new EntityKey( id, persister );
+
+			if ( loadOptions.isSessionCheckingEnabled() ) {
+				// look for it in the Session first
+				final Object managedEntity = session.getPersistenceContext().getEntity( entityKey );
+				if ( managedEntity != null ) {
+					if ( !loadOptions.isReturnOfDeletedEntitiesEnabled() ) {
+						final EntityEntry entry = session.getPersistenceContext().getEntry( managedEntity );
+						if ( entry.getStatus() == Status.DELETED || entry.getStatus() == Status.GONE ) {
+							// put a null in the result
+							result.add( i, null );
+							continue;
+						}
+					}
+					// if we did not hit the continue above, there is already an
+					// entry in the PC for that entity, so use it...
+					result.add( i, managedEntity );
+					continue;
+				}
+			}
+
+			// if we did not hit any of the continues above, then we need to batch
+			// load the entity state.
+			idsInBatch.add( ids[i] );
+
+			if ( idsInBatch.size() >= maxBatchSize ) {
+				performOrderedBatchLoad( idsInBatch, lockOptions, persister, session );
+			}
+
+			// Save the EntityKey instance for use later!
+			result.add( i, entityKey );
+			elementPositionsLoadedByBatch.add( i );
+		}
+
+		if ( !idsInBatch.isEmpty() ) {
+			performOrderedBatchLoad( idsInBatch, lockOptions, persister, session );
+		}
+
+		for ( Integer position : elementPositionsLoadedByBatch ) {
+			// the element value at this position in the result List should be
+			// the EntityKey for that entity; reuse it!
+			final EntityKey entityKey = (EntityKey) result.get( position );
+			Object entity = session.getPersistenceContext().getEntity( entityKey );
+			if ( entity != null && !loadOptions.isReturnOfDeletedEntitiesEnabled() ) {
+				// make sure it is not DELETED
+				final EntityEntry entry = session.getPersistenceContext().getEntry( entity );
+				if ( entry.getStatus() == Status.DELETED || entry.getStatus() == Status.GONE ) {
+					// the entity is locally deleted, and the options ask that we not return such entities...
+					entity = null;
+				}
+			}
+			result.set( position, entity );
+		}
+
+		return result;
+	}
+
+	private void performOrderedBatchLoad(
+			List<Serializable> idsInBatch,
+			LockOptions lockOptions,
+			OuterJoinLoadable persister,
+			SharedSessionContractImplementor session) {
+		final int batchSize =  idsInBatch.size();
+		final DynamicEntityLoader batchingLoader = new DynamicEntityLoader(
+				persister,
+				batchSize,
+				lockOptions,
+				session.getFactory(),
+				session.getLoadQueryInfluencers()
+		);
+
+		final Serializable[] idsInBatchArray = idsInBatch.toArray( new Serializable[ idsInBatch.size() ] );
+
+		QueryParameters qp = buildMultiLoadQueryParameters( persister, idsInBatchArray, lockOptions );
+		batchingLoader.doEntityBatchFetch( session, qp, idsInBatchArray );
+
+		idsInBatch.clear();
+	}
+
+	@SuppressWarnings("unchecked")
+	protected List performUnorderedMultiLoad(
+			OuterJoinLoadable persister,
+			Serializable[] ids,
+			SharedSessionContractImplementor session,
+			MultiLoadOptions loadOptions) {
+		assert !loadOptions.isOrderReturnEnabled();
+
+		final List result = CollectionHelper.arrayList( ids.length );
+
+		if ( loadOptions.isSessionCheckingEnabled() ) {
 			// the user requested that we exclude ids corresponding to already managed
 			// entities from the generated load SQL.  So here we will iterate all
 			// incoming id values and see whether it corresponds to an existing
 			// entity associated with the PC - if it does we add it to the result
 			// list immediately and remove its id from the group of ids to load.
 			boolean foundAnyManagedEntities = false;
-			final List<K> nonManagedIds = new ArrayList<K>();
-			for ( K id : ids ) {
+			final List<Serializable> nonManagedIds = new ArrayList<Serializable>();
+			for ( Serializable id : ids ) {
 				final EntityKey entityKey = new EntityKey( id, persister );
-				final T managedEntity = (T) session.getPersistenceContext().getEntity( entityKey );
+				final Object managedEntity = session.getPersistenceContext().getEntity( entityKey );
 				if ( managedEntity != null ) {
+					if ( !loadOptions.isReturnOfDeletedEntitiesEnabled() ) {
+						final EntityEntry entry = session.getPersistenceContext().getEntry( managedEntity );
+						if ( entry.getStatus() == Status.DELETED || entry.getStatus() == Status.GONE ) {
+							continue;
+						}
+					}
 					foundAnyManagedEntities = true;
 					result.add( managedEntity );
 				}
@@ -85,7 +216,7 @@ public class DynamicBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuil
 					// over-write the ids to be loaded with the collection of
 					// just non-managed ones
 					ids = nonManagedIds.toArray(
-							(K[]) Array.newInstance(
+							(Serializable[]) Array.newInstance(
 									ids.getClass().getComponentType(),
 									nonManagedIds.size()
 							)
@@ -94,19 +225,17 @@ public class DynamicBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuil
 			}
 		}
 
-
-		if ( lockOptions == null ) {
-			lockOptions = new LockOptions( LockMode.NONE );
-		}
+		final LockOptions lockOptions = (loadOptions.getLockOptions() == null)
+				? new LockOptions( LockMode.NONE )
+				: loadOptions.getLockOptions();
 
 		int numberOfIdsLeft = ids.length;
-
 		final int maxBatchSize;
-		if ( explicitBatchSize != null && explicitBatchSize > 0 ) {
-			maxBatchSize = explicitBatchSize;
+		if ( loadOptions.getBatchSize() != null && loadOptions.getBatchSize() > 0 ) {
+			maxBatchSize = loadOptions.getBatchSize();
 		}
 		else {
-			maxBatchSize = session.getFactory().getDialect().getDefaultBatchLoadSizingStrategy().determineOptimalBatchLoadSize(
+			maxBatchSize = session.getJdbcServices().getJdbcEnvironment().getDialect().getDefaultBatchLoadSizingStrategy().determineOptimalBatchLoadSize(
 					persister.getIdentifierType().getColumnSpan( session.getFactory() ),
 					numberOfIdsLeft
 			);
@@ -207,7 +336,7 @@ public class DynamicBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuil
 		public Object load(
 				Serializable id,
 				Object optionalObject,
-				SessionImplementor session,
+				SharedSessionContractImplementor session,
 				LockOptions lockOptions) {
 			final Serializable[] batch = session.getPersistenceContext()
 					.getBatchFetchQueue()
@@ -261,11 +390,14 @@ public class DynamicBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuil
 					-1,
 					lockMode,
 					factory,
-					loadQueryInfluencers
-			) {
+					loadQueryInfluencers) {
 				@Override
 				protected StringBuilder whereString(String alias, String[] columnNames, int batchSize) {
-					return StringHelper.buildBatchFetchRestrictionFragment( alias, columnNames, getFactory().getDialect() );
+					return StringHelper.buildBatchFetchRestrictionFragment(
+							alias,
+							columnNames,
+							getFactory().getDialect()
+					);
 				}
 			};
 
@@ -290,7 +422,7 @@ public class DynamicBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuil
 		}
 
 		public List doEntityBatchFetch(
-				SessionImplementor session,
+				SharedSessionContractImplementor session,
 				QueryParameters queryParameters,
 				Serializable[] ids) {
 			final String sql = StringHelper.expandBatchIdPlaceholder(
@@ -298,7 +430,7 @@ public class DynamicBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuil
 					ids,
 					alias,
 					persister.getKeyColumnNames(),
-					getFactory().getDialect()
+					session.getJdbcServices().getJdbcEnvironment().getDialect()
 			);
 
 			try {
@@ -333,7 +465,7 @@ public class DynamicBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuil
 				}
 			}
 			catch ( SQLException sqle ) {
-				throw session.getFactory().getSQLExceptionHelper().convert(
+				throw session.getJdbcServices().getSqlExceptionHelper().convert(
 						sqle,
 						"could not load an entity batch: " + MessageHelper.infoString(
 								getEntityPersisters()[0],
@@ -345,13 +477,13 @@ public class DynamicBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuil
 			}
 		}
 
-		private List doTheLoad(String sql, QueryParameters queryParameters, SessionImplementor session) throws SQLException {
+		private List doTheLoad(String sql, QueryParameters queryParameters, SharedSessionContractImplementor session) throws SQLException {
 			final RowSelection selection = queryParameters.getRowSelection();
 			final int maxRows = LimitHelper.hasMaxRows( selection ) ?
 					selection.getMaxRows() :
 					Integer.MAX_VALUE;
 
-			final List<AfterLoadAction> afterLoadActions = new ArrayList<AfterLoadAction>();
+			final List<AfterLoadAction> afterLoadActions = new ArrayList<>();
 			final SqlStatementWrapper wrapper = executeQueryStatement( sql, queryParameters, false, afterLoadActions, session );
 			final ResultSet rs = wrapper.getResultSet();
 			final Statement st = wrapper.getStatement();
@@ -359,7 +491,7 @@ public class DynamicBatchingEntityLoaderBuilder extends BatchingEntityLoaderBuil
 				return processResultSet( rs, queryParameters, session, false, null, maxRows, afterLoadActions );
 			}
 			finally {
-				session.getJdbcCoordinator().getResourceRegistry().release( st );
+				session.getJdbcCoordinator().getLogicalConnection().getResourceRegistry().release( st );
 				session.getJdbcCoordinator().afterStatementExecution();
 			}
 		}

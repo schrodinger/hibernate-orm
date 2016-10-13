@@ -6,25 +6,23 @@
  */
 package org.hibernate.cache.infinispan.util;
 
-import org.hibernate.HibernateException;
-import org.hibernate.jdbc.WorkExecutor;
-import org.hibernate.jdbc.WorkExecutorVisitable;
-import org.hibernate.resource.transaction.TransactionCoordinator;
-import org.infinispan.AdvancedCache;
-import org.infinispan.util.logging.Log;
-import org.infinispan.util.logging.LogFactory;
-
+import java.sql.Connection;
+import java.sql.SQLException;
 import javax.transaction.Status;
 import javax.transaction.Synchronization;
 
-import java.sql.Connection;
-import java.sql.SQLException;
+import org.hibernate.HibernateException;
+import org.hibernate.jdbc.WorkExecutor;
+import org.hibernate.jdbc.WorkExecutorVisitable;
+import org.hibernate.resource.transaction.spi.TransactionCoordinator;
+
+import org.infinispan.AdvancedCache;
 
 /**
  * @author Radim Vansa &lt;rvansa@redhat.com&gt;
  */
 public abstract class InvocationAfterCompletion implements Synchronization {
-	protected static final Log log = LogFactory.getLog( InvocationAfterCompletion.class );
+	protected static final InfinispanMessageLogger log = InfinispanMessageLogger.Provider.getLog( InvocationAfterCompletion.class );
 
 	protected final TransactionCoordinator tc;
 	protected final AdvancedCache cache;

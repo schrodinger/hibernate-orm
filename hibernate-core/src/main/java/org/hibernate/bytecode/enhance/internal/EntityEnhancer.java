@@ -6,26 +6,30 @@
  */
 package org.hibernate.bytecode.enhance.internal;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import javassist.CannotCompileException;
 import javassist.CtClass;
 import javassist.CtField;
 import javassist.Modifier;
-import javassist.NotFoundException;
 
+import javassist.NotFoundException;
 import org.hibernate.bytecode.enhance.internal.tracker.DirtyTracker;
 import org.hibernate.bytecode.enhance.internal.tracker.SimpleCollectionTracker;
 import org.hibernate.bytecode.enhance.internal.tracker.SimpleFieldTracker;
 import org.hibernate.bytecode.enhance.spi.CollectionTracker;
 import org.hibernate.bytecode.enhance.spi.EnhancementContext;
 import org.hibernate.bytecode.enhance.spi.EnhancementException;
-import org.hibernate.bytecode.enhance.spi.Enhancer;
 import org.hibernate.bytecode.enhance.spi.EnhancerConstants;
 import org.hibernate.bytecode.enhance.spi.interceptor.LazyAttributeLoadingInterceptor;
+import org.hibernate.engine.spi.EntityEntry;
+import org.hibernate.engine.spi.ManagedEntity;
 import org.hibernate.engine.spi.PersistentAttributeInterceptable;
 import org.hibernate.engine.spi.SelfDirtinessTracker;
 
@@ -34,7 +38,7 @@ import org.hibernate.engine.spi.SelfDirtinessTracker;
  *
  * @author <a href="mailto:lbarreiro@redhat.com">Luis Barreiro</a>
  */
-public class EntityEnhancer extends Enhancer {
+public class EntityEnhancer extends PersistentAttributesEnhancer {
 
 	public EntityEnhancer(EnhancementContext context) {
 		super( context );
@@ -46,7 +50,7 @@ public class EntityEnhancer extends Enhancer {
 
 	public void enhance(CtClass managedCtClass) {
 		// add the ManagedEntity interface
-		managedCtClass.addInterface( managedEntityCtClass );
+		managedCtClass.addInterface( loadCtClassFromClass( ManagedEntity.class ) );
 
 		addEntityInstanceHandling( managedCtClass );
 		addEntityEntryHandling( managedCtClass );
@@ -58,7 +62,7 @@ public class EntityEnhancer extends Enhancer {
 			addInLineDirtyHandling( managedCtClass );
 		}
 
-		new PersistentAttributesEnhancer( enhancementContext ).enhance( managedCtClass );
+		super.enhance( managedCtClass );
 	}
 
 	private void addEntityInstanceHandling(CtClass managedCtClass) {
@@ -83,7 +87,7 @@ public class EntityEnhancer extends Enhancer {
 
 	private void addEntityEntryHandling(CtClass managedCtClass) {
 		FieldWriter.addFieldWithGetterAndSetter(
-				managedCtClass, entityEntryCtClass,
+				managedCtClass, loadCtClassFromClass( EntityEntry.class ),
 				EnhancerConstants.ENTITY_ENTRY_FIELD_NAME,
 				EnhancerConstants.ENTITY_ENTRY_GETTER_NAME,
 				EnhancerConstants.ENTITY_ENTRY_SETTER_NAME
@@ -92,7 +96,7 @@ public class EntityEnhancer extends Enhancer {
 
 	private void addLinkedPreviousHandling(CtClass managedCtClass) {
 		FieldWriter.addFieldWithGetterAndSetter(
-				managedCtClass, managedEntityCtClass,
+				managedCtClass, loadCtClassFromClass( ManagedEntity.class ),
 				EnhancerConstants.PREVIOUS_FIELD_NAME,
 				EnhancerConstants.PREVIOUS_GETTER_NAME,
 				EnhancerConstants.PREVIOUS_SETTER_NAME
@@ -101,7 +105,7 @@ public class EntityEnhancer extends Enhancer {
 
 	private void addLinkedNextHandling(CtClass managedCtClass) {
 		FieldWriter.addFieldWithGetterAndSetter(
-				managedCtClass, managedEntityCtClass,
+				managedCtClass, loadCtClassFromClass( ManagedEntity.class ),
 				EnhancerConstants.NEXT_FIELD_NAME,
 				EnhancerConstants.NEXT_GETTER_NAME,
 				EnhancerConstants.NEXT_SETTER_NAME
@@ -109,25 +113,20 @@ public class EntityEnhancer extends Enhancer {
 	}
 
 	private void addInLineDirtyHandling(CtClass managedCtClass) {
-		try {
-			managedCtClass.addInterface( classPool.get( SelfDirtinessTracker.class.getName() ) );
+		managedCtClass.addInterface( loadCtClassFromClass( SelfDirtinessTracker.class ) );
 
-			FieldWriter.addField(
-					managedCtClass,
-					classPool.get( DirtyTracker.class.getName() ),
-					EnhancerConstants.TRACKER_FIELD_NAME
-			);
-			FieldWriter.addField(
-					managedCtClass,
-					classPool.get( CollectionTracker.class.getName() ),
-					EnhancerConstants.TRACKER_COLLECTION_NAME
-			);
+		FieldWriter.addField(
+				managedCtClass,
+				loadCtClassFromClass( DirtyTracker.class ),
+				EnhancerConstants.TRACKER_FIELD_NAME
+		);
+		FieldWriter.addField(
+				managedCtClass,
+				loadCtClassFromClass( CollectionTracker.class ),
+				EnhancerConstants.TRACKER_COLLECTION_NAME
+		);
 
-			createDirtyTrackerMethods( managedCtClass );
-		}
-		catch (NotFoundException nfe) {
-			nfe.printStackTrace();
-		}
+		createDirtyTrackerMethods( managedCtClass );
 	}
 
 	private void createDirtyTrackerMethods(CtClass managedCtClass) {
@@ -210,26 +209,56 @@ public class EntityEnhancer extends Enhancer {
 	}
 
 	private List<CtField> collectCollectionFields(CtClass managedCtClass) {
-		final List<CtField> collectionList = new LinkedList<CtField>();
-		try {
-			for ( CtField ctField : managedCtClass.getDeclaredFields() ) {
-				// skip static fields and skip fields added by enhancement
-				if ( Modifier.isStatic( ctField.getModifiers() ) || ctField.getName().startsWith( "$$_hibernate_" ) ) {
-					continue;
-				}
-				if ( enhancementContext.isPersistentField( ctField ) ) {
-					for ( CtClass ctClass : ctField.getType().getInterfaces() ) {
-						if ( PersistentAttributesHelper.isAssignable( ctClass, Collection.class.getName() ) ) {
-							collectionList.add( ctField );
-							break;
-						}
-					}
+		List<CtField> collectionList = new ArrayList<>();
+
+		for ( CtField ctField : managedCtClass.getDeclaredFields() ) {
+			// skip static fields and skip fields added by enhancement
+			if ( Modifier.isStatic( ctField.getModifiers() ) || ctField.getName().startsWith( "$$_hibernate_" ) ) {
+				continue;
+			}
+			if ( enhancementContext.isPersistentField( ctField ) ) {
+				if ( PersistentAttributesHelper.isAssignable( ctField, Collection.class.getName() ) ||
+						PersistentAttributesHelper.isAssignable( ctField, Map.class.getName() ) ) {
+					collectionList.add( ctField );
 				}
 			}
 		}
-		catch (NotFoundException ignored) {
+
+		// HHH-10646 Add fields inherited from @MappedSuperclass
+		// HHH-10981 There is no need to do it for @MappedSuperclass
+		if ( !enhancementContext.isMappedSuperclassClass( managedCtClass ) ) {
+			collectionList.addAll( collectInheritCollectionFields( managedCtClass ) );
 		}
+
 		return collectionList;
+	}
+
+	private Collection<CtField> collectInheritCollectionFields(CtClass managedCtClass) {
+		if ( managedCtClass == null || Object.class.getName().equals( managedCtClass.getName() ) ) {
+			return Collections.emptyList();
+		}
+		try {
+			CtClass managedCtSuperclass = managedCtClass.getSuperclass();
+
+			if ( !enhancementContext.isMappedSuperclassClass( managedCtSuperclass ) ) {
+				return collectInheritCollectionFields( managedCtSuperclass );
+			}
+			List<CtField> collectionList = new ArrayList<CtField>();
+
+			for ( CtField ctField : managedCtSuperclass.getDeclaredFields() ) {
+				if ( !Modifier.isStatic( ctField.getModifiers() ) && enhancementContext.isPersistentField( ctField ) ) {
+					if ( PersistentAttributesHelper.isAssignable( ctField, Collection.class.getName() ) ||
+							PersistentAttributesHelper.isAssignable( ctField, Map.class.getName() ) ) {
+						collectionList.add( ctField );
+					}
+				}
+			}
+			collectionList.addAll( collectInheritCollectionFields( managedCtSuperclass ) );
+			return collectionList;
+		}
+		catch ( NotFoundException nfe ) {
+			return Collections.emptyList();
+		}
 	}
 
 	private void createCollectionDirtyCheckMethod(CtClass managedCtClass) {

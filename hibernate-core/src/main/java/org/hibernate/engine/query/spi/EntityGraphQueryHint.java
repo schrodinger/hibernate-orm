@@ -11,7 +11,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
 import javax.persistence.AttributeNode;
 import javax.persistence.EntityGraph;
 import javax.persistence.Subgraph;
@@ -22,11 +21,15 @@ import org.hibernate.hql.internal.ast.HqlSqlWalker;
 import org.hibernate.hql.internal.ast.tree.FromClause;
 import org.hibernate.hql.internal.ast.tree.FromElement;
 import org.hibernate.hql.internal.ast.tree.FromElementFactory;
+import org.hibernate.hql.internal.ast.tree.ImpliedFromElement;
 import org.hibernate.persister.collection.QueryableCollection;
 import org.hibernate.sql.JoinType;
 import org.hibernate.type.CollectionType;
 import org.hibernate.type.EntityType;
 import org.hibernate.type.Type;
+
+import static org.hibernate.jpa.QueryHints.HINT_FETCHGRAPH;
+import static org.hibernate.jpa.QueryHints.HINT_LOADGRAPH;
 
 /**
  * Encapsulates a JPA EntityGraph provided through a JPQL query hint.  Converts the fetches into a list of AST
@@ -36,10 +39,23 @@ import org.hibernate.type.Type;
  * @author Brett Meyer
  */
 public class EntityGraphQueryHint {
+	private final String hintName;
 	private final EntityGraph<?> originEntityGraph;
 
-	public EntityGraphQueryHint(EntityGraph<?> originEntityGraph) {
+	public EntityGraphQueryHint(String hintName, EntityGraph<?> originEntityGraph) {
+		assert hintName != null;
+		assert HINT_FETCHGRAPH.equals( hintName ) || HINT_LOADGRAPH.equals( hintName );
+
+		this.hintName = hintName;
 		this.originEntityGraph = originEntityGraph;
+	}
+
+	public String getHintName() {
+		return hintName;
+	}
+
+	public EntityGraph<?> getOriginEntityGraph() {
+		return originEntityGraph;
 	}
 
 	public List<FromElement> toFromElements(FromClause fromClause, HqlSqlWalker walker) {
@@ -47,7 +63,7 @@ public class EntityGraphQueryHint {
 		Map<String, FromElement> explicitFetches = new HashMap<String, FromElement>();
 		for ( Object o : fromClause.getFromElements() ) {
 			final FromElement fromElement = (FromElement) o;
-			if ( fromElement.getRole() != null ) {
+			if ( fromElement.getRole() != null  && ! (fromElement instanceof ImpliedFromElement) ) {
 				explicitFetches.put( fromElement.getRole(), fromElement );
 			}
 		}

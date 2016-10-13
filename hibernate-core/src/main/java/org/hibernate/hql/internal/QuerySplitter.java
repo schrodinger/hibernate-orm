@@ -35,6 +35,7 @@ public final class QuerySplitter {
 		BEFORE_CLASS_TOKENS.add( "update" );
 		//beforeClassTokens.add("new"); DEFINITELY DON'T HAVE THIS!!
 		BEFORE_CLASS_TOKENS.add( "," );
+		BEFORE_CLASS_TOKENS.add( "join" );
 		NOT_AFTER_CLASS_TOKENS.add( "in" );
 		//notAfterClassTokens.add(",");
 		NOT_AFTER_CLASS_TOKENS.add( "from" );
@@ -89,6 +90,18 @@ public final class QuerySplitter {
 				templateQuery.append( token );
 				continue;
 			}
+			else if ( isTokenStartWithAQuoteCharacter( token ) ) {
+				if ( !isTokenEndWithAQuoteCharacter( token ) ) {
+					inQuote = true;
+				}
+				templateQuery.append( token );
+				continue;
+			}
+			else if ( isTokenEndWithAQuoteCharacter( token ) ) {
+				inQuote = false;
+				templateQuery.append( token );
+				continue;
+			}
 			else if ( inQuote ) {
 				templateQuery.append( token );
 				continue;
@@ -130,6 +143,14 @@ public final class QuerySplitter {
 		return "'".equals( token ) || "\"".equals( token );
 	}
 
+	private static boolean isTokenStartWithAQuoteCharacter(String token) {
+		return token.startsWith( "'" ) || token.startsWith( "\"" );
+	}
+
+	private static boolean isTokenEndWithAQuoteCharacter(String token) {
+		return token.endsWith( "'" ) || token.endsWith( "\"" );
+	}
+
 	private static String nextNonWhite(String[] tokens, int start) {
 		for ( int i = start + 1; i < tokens.length; i++ ) {
 			if ( !ParserHelper.isWhitespace( tokens[i] ) ) {
@@ -165,6 +186,6 @@ public final class QuerySplitter {
 	}
 
 	public static String getImportedClass(String name, SessionFactoryImplementor factory) {
-		return factory.getImportedClassName( name );
+		return factory.getMetamodel().getImportedClassName( name );
 	}
 }

@@ -208,5 +208,34 @@ public interface DeprecationLogger extends BasicLogger {
 //	)
 //	void logDeprecatedBytecodeEnhancement();
 
+	@LogMessage(level = WARN)
+	@Message(
+			id = 90000020,
+			value = "You are using the deprecated legacy bytecode enhancement Ant-task.  This task is left in place for a short-time to " +
+					"aid migrations to 5.1 and the new (vastly improved) bytecode enhancement support.  This task (%s) now delegates to the" +
+					"new Ant-task (%s) leveraging that new bytecode enhancement.  You should update your build to use the new task explicitly."
+	)
+	void logDeprecatedInstrumentTask(Class taskClass, Class newTaskClass);
 
+	@LogMessage(level = WARN)
+	@Message(
+			id = 90000021,
+			value = "Encountered deprecated setting [%s], use [%s] instead"
+	)
+	void deprecatedSetting(String oldSettingName, String newSettingName);
+
+	@LogMessage(level = WARN)
+	@Message(
+			id = 90000022,
+			value = "Hibernate's legacy org.hibernate.Criteria API is deprecated; use the JPA javax.persistence.criteria.CriteriaQuery instead"
+	)
+	void deprecatedLegacyCriteria();
+
+	@LogMessage(level = WARN)
+	@Message(
+			id = 90000023,
+			value = "Encountered use of deprecated Connection handling settings [hibernate.connection.acquisition_mode]" +
+					"or [hibernate.connection.release_mode]; use [hibernate.connection.handling_mode] instead"
+	)
+	void logUseOfDeprecatedConnectionHandlingSettings();
 }

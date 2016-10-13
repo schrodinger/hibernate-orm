@@ -94,19 +94,26 @@ public class ParameterParser {
 			final char c = sqlString.charAt( indx );
 			final boolean lastCharacter = indx == stringLength-1;
 
-			if ( inDelimitedComment ) {
+			// if we are "in" a certain context, check first for the end of that context
+			if ( inSingleQuotes ) {
+				recognizer.other( c );
+				if ( '\'' == c ) {
+					inSingleQuotes = false;
+				}
+			}
+			else if ( inDoubleQuotes ) {
+				recognizer.other( c );
+				if ( '\"' == c ) {
+					inDoubleQuotes = false;
+				}
+			}
+			else if ( inDelimitedComment ) {
 				recognizer.other( c );
 				if ( !lastCharacter && '*' == c && '/' == sqlString.charAt( indx+1 ) ) {
 					inDelimitedComment = false;
 					recognizer.other( sqlString.charAt( indx+1 ) );
 					indx++;
 				}
-			}
-			else if ( !lastCharacter && '/' == c && '*' == sqlString.charAt( indx+1 ) ) {
-				inDelimitedComment = true;
-				recognizer.other( c );
-				recognizer.other( sqlString.charAt( indx+1 ) );
-				indx++;
 			}
 			else if ( inLineComment ) {
 				recognizer.other( c );
@@ -122,6 +129,13 @@ public class ParameterParser {
 					}
 				}
 			}
+			// otherwise, see if we start such a context
+			else if ( !lastCharacter && '/' == c && '*' == sqlString.charAt( indx+1 ) ) {
+				inDelimitedComment = true;
+				recognizer.other( c );
+				recognizer.other( sqlString.charAt( indx+1 ) );
+				indx++;
+			}
 			else if ( '-' == c ) {
 				recognizer.other( c );
 				if ( !lastCharacter && '-' == sqlString.charAt( indx+1 ) ) {
@@ -130,39 +144,34 @@ public class ParameterParser {
 					indx++;
 				}
 			}
-			else if ( inDoubleQuotes ) {
-				if ( '\"' == c ) {
-					inDoubleQuotes = false;
-				}
-				recognizer.other( c );
-			}
 			else if ( '\"' == c ) {
 				inDoubleQuotes = true;
-				recognizer.other( c );
-			}
-			else if ( inSingleQuotes ) {
-				if ( '\'' == c ) {
-					inSingleQuotes = false;
-				}
 				recognizer.other( c );
 			}
 			else if ( '\'' == c ) {
 				inSingleQuotes = true;
 				recognizer.other( c );
 			}
+			// special handling for backslash
 			else if ( '\\' == c ) {
 				// skip sending the backslash and instead send then next character, treating is as a literal
 				recognizer.other( sqlString.charAt( ++indx ) );
 			}
+			// otherwise
 			else {
-				if ( c == ':' ) {
+				if ( c == ':' && indx < stringLength - 1 && sqlString.charAt( indx + 1 ) == ':') {
+					// colon character has been escaped
+					recognizer.other( c );
+					indx++;
+				}
+				else if ( c == ':' ) {
 					// named parameter
 					final int right = StringHelper.firstIndexOfChar( sqlString, ParserHelper.HQL_SEPARATORS_BITSET, indx + 1 );
 					final int chopLocation = right < 0 ? sqlString.length() : right;
 					final String param = sqlString.substring( indx + 1, chopLocation );
 					if ( StringHelper.isEmpty( param ) ) {
 						throw new QueryException(
-								"Space is not allowed after parameter prefix ':' [" + sqlString + "]"
+								"Space is not allowed afterQuery parameter prefix ':' [" + sqlString + "]"
 						);
 					}
 					recognizer.namedParameter( param, indx );

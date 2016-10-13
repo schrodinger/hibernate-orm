@@ -111,6 +111,12 @@ abstract public class DialectChecks {
 		}
 	}
 
+	public static class SupportsRowValueConstructorSyntaxCheck implements DialectCheck {
+		public boolean isMatch(Dialect dialect) {
+			return dialect.supportsRowValueConstructorSyntax();
+		}
+	}
+
 	public static class SupportsRowValueConstructorSyntaxInInListCheck implements DialectCheck {
 		public boolean isMatch(Dialect dialect) {
 			return dialect.supportsRowValueConstructorSyntaxInInList();
@@ -181,6 +187,18 @@ abstract public class DialectChecks {
 	public static class DoesNotSupportRowValueConstructorSyntax implements DialectCheck {
 		public boolean isMatch(Dialect dialect) {
 			return dialect.supportsRowValueConstructorSyntax() == false;
+		}
+	}
+
+	public static class DoesNotSupportFollowOnLocking implements DialectCheck {
+		public boolean isMatch(Dialect dialect) {
+			return !dialect.useFollowOnLocking( null );
+		}
+	}
+
+	public static class SupportPartitionBy implements DialectCheck {
+		public boolean isMatch(Dialect dialect) {
+			return dialect.supportsPartitionBy();
 		}
 	}
 }

@@ -6,12 +6,14 @@
  */
 package org.hibernate.test.schemaupdate;
 
+import java.io.File;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.util.EnumSet;
+import java.util.List;
 import javax.persistence.Entity;
 import javax.persistence.Id;
 import javax.persistence.Table;
-import java.io.File;
-import java.nio.file.Files;
-import java.util.List;
 
 import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistry;
@@ -19,11 +21,10 @@ import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.boot.spi.MetadataImplementor;
 import org.hibernate.cfg.Environment;
 import org.hibernate.tool.hbm2ddl.SchemaUpdate;
-import org.hibernate.tool.hbm2ddl.Target;
-
-import org.junit.Test;
+import org.hibernate.tool.schema.TargetType;
 
 import org.hibernate.testing.TestForIssue;
+import org.junit.Test;
 
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertThat;
@@ -50,14 +51,14 @@ public class SchemaUpdateDelimiterTest {
 					.buildMetadata();
 			metadata.validate();
 
-			SchemaUpdate su = new SchemaUpdate( ssr, metadata );
-			su.setHaltOnError( true );
-			su.setOutputFile( output.getAbsolutePath() );
-			su.setDelimiter( EXPECTED_DELIMITER );
-			su.setFormat( false );
-			su.execute( Target.SCRIPT );
+			new SchemaUpdate()
+					.setHaltOnError( true )
+					.setOutputFile( output.getAbsolutePath() )
+					.setDelimiter( EXPECTED_DELIMITER )
+					.setFormat( false )
+					.execute( EnumSet.of( TargetType.SCRIPT ), metadata );
 
-			List<String> sqlLines = Files.readAllLines( output.toPath() );
+			List<String> sqlLines = Files.readAllLines( output.toPath(), Charset.defaultCharset() );
 			for ( String line : sqlLines ) {
 				assertThat(
 						"The expected delimiter is not applied " + line,

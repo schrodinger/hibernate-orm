@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.hibernate.HibernateException;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.loader.CollectionAliases;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.type.Type;
@@ -50,7 +50,7 @@ public class PersistentSet extends AbstractPersistentCollection implements java.
 	 *
 	 * @param session The session to which this set will belong.
 	 */
-	public PersistentSet(SessionImplementor session) {
+	public PersistentSet(SharedSessionContractImplementor session) {
 		super( session );
 	}
 
@@ -61,7 +61,7 @@ public class PersistentSet extends AbstractPersistentCollection implements java.
 	 * @param session The session to which this set will belong.
 	 * @param set The underlying set data.
 	 */
-	public PersistentSet(SessionImplementor session, java.util.Set set) {
+	public PersistentSet(SharedSessionContractImplementor session, java.util.Set set) {
 		super( session );
 		// Sets can be just a view of a part of another collection.
 		// do we need to copy it to be sure it won't be changing
@@ -460,51 +460,29 @@ public class PersistentSet extends AbstractPersistentCollection implements java.
 		}
 	}
 
-	final class SimpleAdd implements DelayedOperation {
-		private Object value;
-		
-		public SimpleAdd(Object value) {
-			this.value = value;
+	final class SimpleAdd extends AbstractValueDelayedOperation {
+
+		public SimpleAdd(Object addedValue) {
+			super( addedValue, null );
 		}
 
 		@Override
 		@SuppressWarnings("unchecked")
 		public void operate() {
-			set.add( value );
-		}
-
-		@Override
-		public Object getAddedInstance() {
-			return value;
-		}
-
-		@Override
-		public Object getOrphan() {
-			return null;
+			set.add( getAddedInstance() );
 		}
 	}
 
-	final class SimpleRemove implements DelayedOperation {
-		private Object value;
-		
-		public SimpleRemove(Object value) {
-			this.value = value;
+	final class SimpleRemove extends AbstractValueDelayedOperation {
+
+		public SimpleRemove(Object orphan) {
+			super( null, orphan );
 		}
 
 		@Override
 		@SuppressWarnings("unchecked")
 		public void operate() {
-			set.remove( value );
-		}
-
-		@Override
-		public Object getAddedInstance() {
-			return null;
-		}
-
-		@Override
-		public Object getOrphan() {
-			return value;
+			set.remove( getOrphan() );
 		}
 	}
 }

@@ -49,8 +49,26 @@ public class TimestampTypeDescriptor implements SqlTypeDescriptor {
 				if ( value instanceof Calendar ) {
 					st.setTimestamp( index, timestamp, (Calendar) value );
 				}
+				else if (options.getJdbcTimeZone() != null) {
+					st.setTimestamp( index, timestamp, Calendar.getInstance( options.getJdbcTimeZone() ) );
+				}
 				else {
 					st.setTimestamp( index, timestamp );
+				}
+			}
+
+			@Override
+			protected void doBind(CallableStatement st, X value, String name, WrapperOptions options)
+					throws SQLException {
+				final Timestamp timestamp = javaTypeDescriptor.unwrap( value, Timestamp.class, options );
+				if ( value instanceof Calendar ) {
+					st.setTimestamp( name, timestamp, (Calendar) value );
+				}
+				else if (options.getJdbcTimeZone() != null) {
+					st.setTimestamp( name, timestamp, Calendar.getInstance( options.getJdbcTimeZone() ) );
+				}
+				else {
+					st.setTimestamp( name, timestamp );
 				}
 			}
 		};
@@ -61,17 +79,23 @@ public class TimestampTypeDescriptor implements SqlTypeDescriptor {
 		return new BasicExtractor<X>( javaTypeDescriptor, this ) {
 			@Override
 			protected X doExtract(ResultSet rs, String name, WrapperOptions options) throws SQLException {
-				return javaTypeDescriptor.wrap( rs.getTimestamp( name ), options );
+				return options.getJdbcTimeZone() != null ?
+					javaTypeDescriptor.wrap( rs.getTimestamp( name, Calendar.getInstance( options.getJdbcTimeZone() ) ), options ) :
+					javaTypeDescriptor.wrap( rs.getTimestamp( name ), options );
 			}
 
 			@Override
 			protected X doExtract(CallableStatement statement, int index, WrapperOptions options) throws SQLException {
-				return javaTypeDescriptor.wrap( statement.getTimestamp( index ), options );
+				return options.getJdbcTimeZone() != null ?
+						javaTypeDescriptor.wrap( statement.getTimestamp( index, Calendar.getInstance( options.getJdbcTimeZone() ) ), options ) :
+						javaTypeDescriptor.wrap( statement.getTimestamp( index ), options );
 			}
 
 			@Override
 			protected X doExtract(CallableStatement statement, String name, WrapperOptions options) throws SQLException {
-				return javaTypeDescriptor.wrap( statement.getTimestamp( name ), options );
+				return options.getJdbcTimeZone() != null ?
+						javaTypeDescriptor.wrap( statement.getTimestamp( name, Calendar.getInstance( options.getJdbcTimeZone() ) ), options ) :
+						javaTypeDescriptor.wrap( statement.getTimestamp( name ), options );
 			}
 		};
 	}

@@ -250,6 +250,35 @@ public class CollectionCacheEvictionTest extends BaseCoreFunctionalTestCase {
 	}
 
 	@Test
+	@TestForIssue(jiraKey = "HHH-10631")
+	public void testCollectionCacheEvictionUpdateWhenChildIsSetToNull() {
+		Session s = openSession();
+		s.beginTransaction();
+
+		Company company1 = (Company) s.get( Company.class, 1 );
+		Company company2 = (Company) s.get( Company.class, 2 );
+
+		// init cache of collection
+		assertEquals( 1, company1.getUsers().size() );
+		assertEquals( 0, company2.getUsers().size() );
+
+		User user = (User) s.get( User.class, 1 );
+		user.setCompany( null );
+
+		s.getTransaction().commit();
+		s.close();
+
+		s = openSession();
+
+		company1 = (Company) s.get( Company.class, 1 );
+		company2 = (Company) s.get( Company.class, 2 );
+
+		assertEquals( 0, company1.getUsers().size() );
+		assertEquals( 0, company2.getUsers().size() );
+		s.close();
+	}
+
+	@Test
 	public void testCollectionCacheEvictionUpdateWithEntityOutOfContext() {
 		Session s = openSession();
 		Company company1 = s.get( Company.class, 1 );
@@ -282,5 +311,25 @@ public class CollectionCacheEvictionTest extends BaseCoreFunctionalTestCase {
 			fail( "Cached element not found" );
 		}
 		s.close();
+	}
+
+	@Test
+	public void testUpdateWithNullRelation() {
+		Session session = openSession();
+		session.beginTransaction();
+		User user = new User();
+		user.setName( "User1" );
+		session.persist( user );
+
+		session.getTransaction().commit();
+		session.close();
+
+		session = openSession();
+		session.beginTransaction();
+		user.setName( "UserUpdate" );
+		session.merge( user );
+
+		session.getTransaction().commit();
+		session.close();
 	}
 }

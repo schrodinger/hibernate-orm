@@ -6,24 +6,42 @@
  */
 package org.hibernate.testing.logger;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.jboss.logging.Logger.Level;
 
 final class TriggerOnPrefixLogListener implements LogListener, Triggerable {
 
-	private final String expectedPrefix;
+	private Set<String> expectedPrefixes = new HashSet<>();
 	private final AtomicBoolean triggered = new AtomicBoolean( false );
+	private final AtomicReference<String> triggerMessage = new AtomicReference<String>( null );
 
 	public TriggerOnPrefixLogListener(String expectedPrefix) {
-		this.expectedPrefix = expectedPrefix;
+		expectedPrefixes.add( expectedPrefix );
+	}
+
+	public TriggerOnPrefixLogListener(Set<String> expectedPrefixes) {
+		this.expectedPrefixes = expectedPrefixes;
 	}
 
 	@Override
 	public void loggedEvent(Level level, String renderedMessage, Throwable thrown) {
-		if ( renderedMessage != null && renderedMessage.startsWith( expectedPrefix ) ) {
-			triggered.set( true );
+		if ( renderedMessage != null ) {
+			for ( String expectedPrefix : expectedPrefixes ) {
+				if ( renderedMessage.startsWith( expectedPrefix ) ) {
+					triggered.set( true );
+					triggerMessage.set( renderedMessage );
+				}
+			}
 		}
+	}
+
+	@Override
+	public String triggerMessage() {
+		return triggerMessage.get();
 	}
 
 	@Override
@@ -34,6 +52,6 @@ final class TriggerOnPrefixLogListener implements LogListener, Triggerable {
 	@Override
 	public void reset() {
 		triggered.set( false );
+		triggerMessage.set( null );
 	}
-
 }

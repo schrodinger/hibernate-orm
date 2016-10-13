@@ -1,23 +1,24 @@
-/*
- * Hibernate, Relational Persistence for Idiomatic Java
- *
- * License: GNU Lesser General Public License (LGPL), version 2.1 or later.
- * See the lgpl.txt file in the root directory or <http://www.gnu.org/licenses/lgpl-2.1.html>.
- */
 dependencies {
-    compile( project(':hibernate-core') )
-    testCompile( project(':hibernate-testing') )
-}
-
-javaTarget {
-    version = '1.8'
+    compile( project( ':hibernate-core' ) )
 }
 
 mavenPom {
-    name = 'Java8-specific Hibernate O/RM functionality'
-    description = 'Support for Java8-specific features - mainly Java8 Date/Time (JSR 310)'
+    name = '(deprecated - use hibernate-core instead) Java8-specific Hibernate O/RM functionality'
+    description = '(deprecated - use hibernate-core instead) Support for Java8-specific features - mainly Java8 Date/Time (JSR 310)'
 }
 
-def osgiDescription() {
-	return mavenPom.description
+public String osgiDescription() {
+    return mavenPom.description
+}
+
+jar {
+    // The OSGi JAR manifest support does not like a non-existent classes dir,
+    // so make sure we dont use the OSGi one :)
+    manifest = null
+}
+
+sourcesJar {
+    // The OSGi JAR manifest support does not like a non-existent classes dir,
+    // so make sure we dont use the OSGi one :)
+    manifest = null
 }

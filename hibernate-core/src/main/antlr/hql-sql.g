@@ -38,6 +38,7 @@ tokens
 	FROM_FRAGMENT;	// A fragment of SQL that represents a table reference in a FROM clause.
 	IMPLIED_FROM;	// An implied FROM element.
 	JOIN_FRAGMENT;	// A JOIN fragment.
+	ENTITY_JOIN; 	// An "ad-hoc" join to an entity
 	SELECT_CLAUSE;
 	LEFT_OUTER;
 	RIGHT_OUTER;
@@ -260,6 +261,8 @@ tokens
     protected void processMapComponentReference(AST node) throws SemanticException { }
 
 	protected void validateMapPropertyExpression(AST node) throws SemanticException { }
+	protected void finishFromClause (AST fromClause) throws SemanticException { }
+
 }
 
 // The main statement rule.
@@ -425,7 +428,7 @@ selectExpr
 	| functionCall
 	| count
 	| collectionFunction			// elements() or indices()
-	| literal
+	| constant
 	| arithmeticExpr
 	| logicalExpr
 	| parameter
@@ -456,6 +459,7 @@ fromClause {
 		prepareFromClauseInputTree(#fromClause_in);
 	}
 	: #(f:FROM { pushFromClause(#fromClause,f); handleClauseStart( FROM ); } fromElementList ) {
+		finishFromClause( #f );
 		handleClauseEnd();
 	}
 	;
@@ -685,7 +689,7 @@ functionCall
 constant
 	: literal
 	| NULL
-	| TRUE { processBoolean(#constant); } 
+	| TRUE { processBoolean(#constant); }
 	| FALSE { processBoolean(#constant); }
 	| JAVA_CONSTANT
 	;

@@ -294,6 +294,7 @@ fromTable
 	// Write the table node (from fragment) and all the join fragments associated with it.
 	: #( a:FROM_FRAGMENT  { out(a); } (tableJoin [ a ])* { fromFragmentSeparator(a); } )
 	| #( b:JOIN_FRAGMENT  { out(b); } (tableJoin [ b ])* { fromFragmentSeparator(b); } )
+	| #( e:ENTITY_JOIN    { out(e); } )
 	;
 
 tableJoin [ AST parent ]
@@ -474,6 +475,7 @@ arguments
 
 castExpression
 	: selectExpr
+	| NULL { out("null"); }
 	;
 
 castTargetType

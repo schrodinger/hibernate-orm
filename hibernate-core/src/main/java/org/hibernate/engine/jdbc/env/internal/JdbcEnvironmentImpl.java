@@ -34,6 +34,7 @@ import org.hibernate.exception.internal.SQLStateConversionDelegate;
 import org.hibernate.exception.internal.StandardSQLExceptionConverter;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.service.spi.ServiceRegistryImplementor;
+
 import org.jboss.logging.Logger;
 
 /**
@@ -73,17 +74,19 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 		}
 		this.nameQualifierSupport = nameQualifierSupport;
 
-		this.sqlExceptionHelper = buildSqlExceptionHelper( dialect );
-		this.extractedMetaDataSupport = new ExtractedDatabaseMetaDataImpl.Builder( this ).build();
+		this.sqlExceptionHelper = buildSqlExceptionHelper( dialect, logWarnings( cfgService, dialect ) );
 
 		final IdentifierHelperBuilder identifierHelperBuilder = IdentifierHelperBuilder.from( this );
 		identifierHelperBuilder.setGloballyQuoteIdentifiers( globalQuoting( cfgService ) );
+		identifierHelperBuilder.setSkipGlobalQuotingForColumnDefinitions( globalQuotingSkippedForColumnDefinitions( cfgService ) );
 		identifierHelperBuilder.setAutoQuoteKeywords( autoKeywordQuoting( cfgService ) );
 		identifierHelperBuilder.setNameQualifierSupport( nameQualifierSupport );
 
 		IdentifierHelper identifierHelper = null;
+		ExtractedDatabaseMetaDataImpl.Builder dbMetaDataBuilder = new ExtractedDatabaseMetaDataImpl.Builder( this );
 		try {
 			identifierHelper = dialect.buildIdentifierHelper( identifierHelperBuilder, null );
+			dbMetaDataBuilder.setSupportsNamedParameters( dialect.supportsNamedParameters( null ) );
 		}
 		catch (SQLException sqle) {
 			// should never ever happen
@@ -93,6 +96,8 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 			identifierHelper = identifierHelperBuilder.build();
 		}
 		this.identifierHelper = identifierHelper;
+
+		this.extractedMetaDataSupport = dbMetaDataBuilder.build();
 
 		this.currentCatalog = identifierHelper.toIdentifier(
 				cfgService.getSetting( AvailableSettings.DEFAULT_CATALOG, StandardConverters.STRING )
@@ -106,9 +111,25 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 		this.lobCreatorBuilder = LobCreatorBuilderImpl.makeLobCreatorBuilder();
 	}
 
+	private static boolean logWarnings(ConfigurationService cfgService, Dialect dialect) {
+		return cfgService.getSetting(
+				AvailableSettings.LOG_JDBC_WARNINGS,
+				StandardConverters.BOOLEAN,
+				dialect.isJdbcLogWarningsEnabledByDefault()
+		);
+	}
+
 	private static boolean globalQuoting(ConfigurationService cfgService) {
 		return cfgService.getSetting(
 				AvailableSettings.GLOBALLY_QUOTED_IDENTIFIERS,
+				StandardConverters.BOOLEAN,
+				false
+		);
+	}
+
+	private boolean globalQuotingSkippedForColumnDefinitions(ConfigurationService cfgService) {
+		return cfgService.getSetting(
+				AvailableSettings.GLOBALLY_QUOTED_IDENTIFIERS_SKIP_COLUMN_DEFINITIONS,
 				StandardConverters.BOOLEAN,
 				false
 		);
@@ -130,10 +151,11 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 	public JdbcEnvironmentImpl(DatabaseMetaData databaseMetaData, Dialect dialect) throws SQLException {
 		this.dialect = dialect;
 
-		this.sqlExceptionHelper = buildSqlExceptionHelper( dialect );
+		this.sqlExceptionHelper = buildSqlExceptionHelper( dialect, false );
 
 		this.extractedMetaDataSupport = new ExtractedDatabaseMetaDataImpl.Builder( this )
 				.apply( databaseMetaData )
+				.setSupportsNamedParameters( databaseMetaData.supportsNamedParameters() )
 				.build();
 
 		NameQualifierSupport nameQualifierSupport = dialect.getNameQualifierSupport();
@@ -203,11 +225,12 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 
 		final ConfigurationService cfgService = serviceRegistry.getService( ConfigurationService.class );
 
-		this.sqlExceptionHelper = buildSqlExceptionHelper( dialect );
+		this.sqlExceptionHelper = buildSqlExceptionHelper( dialect, logWarnings( cfgService, dialect ) );
 
 		this.extractedMetaDataSupport = new ExtractedDatabaseMetaDataImpl.Builder( this )
 				.apply( databaseMetaData )
 				.setConnectionSchemaName( determineCurrentSchemaName( databaseMetaData, serviceRegistry, dialect ) )
+				.setSupportsNamedParameters(dialect.supportsNamedParameters(databaseMetaData))
 				.build();
 
 		NameQualifierSupport nameQualifierSupport = dialect.getNameQualifierSupport();
@@ -218,6 +241,7 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 
 		final IdentifierHelperBuilder identifierHelperBuilder = IdentifierHelperBuilder.from( this );
 		identifierHelperBuilder.setGloballyQuoteIdentifiers( globalQuoting( cfgService ) );
+		identifierHelperBuilder.setSkipGlobalQuotingForColumnDefinitions( globalQuotingSkippedForColumnDefinitions( cfgService ) );
 		identifierHelperBuilder.setAutoQuoteKeywords( autoKeywordQuoting( cfgService ) );
 		identifierHelperBuilder.setNameQualifierSupport( nameQualifierSupport );
 		IdentifierHelper identifierHelper = null;
@@ -233,7 +257,7 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 		}
 		this.identifierHelper = identifierHelper;
 
-		// and that current-catalog and current-schema happen after it
+		// and that current-catalog and current-schema happen afterQuery it
 		this.currentCatalog = identifierHelper.toIdentifier( extractedMetaDataSupport.getConnectionCatalogName() );
 		this.currentSchema = identifierHelper.toIdentifier( extractedMetaDataSupport.getConnectionSchemaName() );
 
@@ -280,13 +304,13 @@ public class JdbcEnvironmentImpl implements JdbcEnvironment {
 	}
 
 	@SuppressWarnings("deprecation")
-	private SqlExceptionHelper buildSqlExceptionHelper(Dialect dialect) {
+	private SqlExceptionHelper buildSqlExceptionHelper(Dialect dialect, boolean logWarnings) {
 		final StandardSQLExceptionConverter sqlExceptionConverter = new StandardSQLExceptionConverter();
 		sqlExceptionConverter.addDelegate( dialect.buildSQLExceptionConversionDelegate() );
 		sqlExceptionConverter.addDelegate( new SQLExceptionTypeDelegate( dialect ) );
 		// todo : vary this based on extractedMetaDataSupport.getSqlStateType()
 		sqlExceptionConverter.addDelegate( new SQLStateConversionDelegate( dialect ) );
-		return new SqlExceptionHelper( sqlExceptionConverter );
+		return new SqlExceptionHelper( sqlExceptionConverter, logWarnings );
 	}
 
 	private Set<String> buildMergedReservedWords(Dialect dialect, DatabaseMetaData dbmd) throws SQLException {

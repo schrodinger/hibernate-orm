@@ -9,7 +9,7 @@ package org.hibernate.envers.strategy;
 import java.io.Serializable;
 
 import org.hibernate.Session;
-import org.hibernate.envers.boot.internal.EnversService;
+import org.hibernate.envers.configuration.internal.AuditEntitiesConfiguration;
 import org.hibernate.envers.configuration.internal.GlobalConfiguration;
 import org.hibernate.envers.internal.entities.mapper.PersistentCollectionChangeData;
 import org.hibernate.envers.internal.entities.mapper.relation.MiddleComponentData;
@@ -26,6 +26,7 @@ import static org.hibernate.envers.internal.entities.mapper.relation.query.Query
  *
  * @author Adam Warski
  * @author Stephanie Pau
+ * @author Chris Cranford
  */
 public class DefaultAuditStrategy implements AuditStrategy {
 	private final SessionCacheCleaner sessionCacheCleaner;
@@ -38,11 +39,11 @@ public class DefaultAuditStrategy implements AuditStrategy {
 	public void perform(
 			Session session,
 			String entityName,
-			EnversService enversService,
+			AuditEntitiesConfiguration auditEntitiesConfiguration,
 			Serializable id,
 			Object data,
 			Object revision) {
-		session.save( enversService.getAuditEntitiesConfiguration().getAuditEntityName( entityName ), data );
+		session.save( auditEntitiesConfiguration.getAuditEntityName( entityName ), data );
 		sessionCacheCleaner.scheduleAuditDataRemoval( session, data );
 	}
 
@@ -51,7 +52,7 @@ public class DefaultAuditStrategy implements AuditStrategy {
 			Session session,
 			String entityName,
 			String propertyName,
-			EnversService enversService,
+			AuditEntitiesConfiguration auditEntitiesConfiguration,
 			PersistentCollectionChangeData persistentCollectionChangeData,
 			Object revision) {
 		session.save( persistentCollectionChangeData.getEntityName(), persistentCollectionChangeData.getData() );
@@ -75,7 +76,7 @@ public class DefaultAuditStrategy implements AuditStrategy {
 		// create a subquery builder
 		// SELECT max(e.revision) FROM versionsReferencedEntity e2
 		QueryBuilder maxERevQb = rootQueryBuilder.newSubQueryBuilder( idData.getAuditEntityName(), alias2 );
-		maxERevQb.addProjection( "max", revisionPropertyPath, false );
+		maxERevQb.addProjection( "max", alias2, revisionPropertyPath, false );
 		// WHERE
 		Parameters maxERevQbParameters = maxERevQb.getRootParameters();
 		// e2.revision <= :revision
@@ -110,7 +111,7 @@ public class DefaultAuditStrategy implements AuditStrategy {
 				versionsMiddleEntityName,
 				MIDDLE_ENTITY_ALIAS_DEF_AUD_STR
 		);
-		maxEeRevQb.addProjection( "max", revisionPropertyPath, false );
+		maxEeRevQb.addProjection( "max", MIDDLE_ENTITY_ALIAS_DEF_AUD_STR, revisionPropertyPath, false );
 		// WHERE
 		Parameters maxEeRevQbParameters = maxEeRevQb.getRootParameters();
 		// ee2.revision <= :revision

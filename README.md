@@ -6,7 +6,7 @@ to applications and other components/libraries.  It is also provides an implemen
 JPA specification, which is the standardized Java specification for ORM.  See 
 [Hibernate.org](http://hibernate.org/orm/) for additional information. 
 
-[![Build Status](http://ci.hibernate.org/job/hibernate-orm-master-h2/badge/icon)](http://ci.hibernate.org/job/hibernate-orm-master-h2/)
+[![Build Status](http://ci.hibernate.org/job/hibernate-orm-master-h2-main/badge/icon)](http://ci.hibernate.org/job/hibernate-orm-master-h2-main/)
 
 
 Quickstart
@@ -48,9 +48,9 @@ This section describes some of the basics developers and contributors new to Gra
 need to know to get productive quickly.  The Gradle documentation is very well done; 2 in 
 particular that are indispensable:
 
-* [Gradle User Guide](http://gradle.org/docs/current/userguide/userguide_single.html) is a typical user guide in that
+* [Gradle User Guide](https://docs.gradle.org/current/userguide/userguide_single.html) is a typical user guide in that
 it follows a topical approach to describing all of the capabilities of Gradle.
-* [Gradle DSL Guide](http://gradle.org/docs/current/dsl/index.html) is quite unique and excellent in quickyl
+* [Gradle DSL Guide](https://docs.gradle.org/current/dsl/index.html) is quite unique and excellent in quickly
 getting up to speed on certain aspects of Gradle.
 
 
@@ -84,7 +84,7 @@ Common Java related tasks
 -------------------------
 
 * _build_ - Assembles (jars) and tests this project
-* _buildDependents_ - Assembles and tests this project and all projects that depend on it.  So think of running this in hibernate-entitymanager, Gradle would assemble and test hibernate-entitymanager as well as hibernate-envers (because envers depends on entitymanager)
+* _buildDependents_ - Assembles and tests this project and all projects that depend on it.  So think of running this in hibernate-core, Gradle would assemble and test hibernate-core as well as hibernate-envers (because envers depends on core)
 * _classes_ - Compiles the main classes
 * _testClasses_ - Compiles the test classes
 * _compile_ (Hibernate addition) - Performs all compilation tasks including staging resources from both main and test

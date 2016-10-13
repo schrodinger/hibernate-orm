@@ -5,22 +5,24 @@
  * See the lgpl.txt file in the root directory or <http://www.gnu.org/licenses/lgpl-2.1.html>.
  */
 package org.hibernate.test.cid;
+
 import java.io.Serializable;
 
-import org.hibernate.engine.spi.SessionImplementor;
-import org.hibernate.id.IdentityGenerator;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.hibernate.id.IdentifierGenerator;
 
 /**
- * Simple {@link IdentityGenerator} implementation for testing composite-id.
+ * Simple {@link IdentifierGenerator} implementation for testing composite-id.
  * 
  * @author Jacob Robertson
  */
-public class PurchaseRecordIdGenerator extends IdentityGenerator {
+public class PurchaseRecordIdGenerator implements IdentifierGenerator {
 
 	private static int nextPurchaseNumber = 2;
 	private static int nextPurchaseSequence = 3;
-	
-	public Serializable generate(SessionImplementor s, Object obj) {
+
+	@Override
+	public Serializable generate(SharedSessionContractImplementor s, Object obj) {
 		return new PurchaseRecord.Id(
 				nextPurchaseNumber++, 
 				String.valueOf(nextPurchaseSequence++));

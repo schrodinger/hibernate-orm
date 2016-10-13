@@ -197,6 +197,15 @@ tokens
 	public void weakKeywords() throws TokenStreamException {
 	}
 
+	public void firstPathTokenWeakKeywords() throws TokenStreamException {
+	}
+
+    /**
+     * Manages the case of an optional FROM allowing the path to start with the "from" keyword
+     */
+	public void matchOptionalFrom() throws RecognitionException, TokenStreamException {
+	}
+
 	/**
 	 * Called after we have recognized ':'.  The expectation is to handle converting
 	 * any non-IDENT token where possibleID == true into an IDENT
@@ -233,12 +242,22 @@ statement
 	: ( updateStatement | deleteStatement | selectStatement | insertStatement )
 	;
 
+// Without the optionalVersioned if the path starts with a keyword the parser fails
 updateStatement
-	: UPDATE^ (VERSIONED)?
+	: UPDATE^ optionalVersioned
 		optionalFromTokenFromClause
 		setClause
 		(whereClause)?
 	;
+
+optionalVersioned
+    : (VERSIONED)?
+    exception
+    catch [NoViableAltException ex]
+ 	{
+ 	    // ignore
+ 	}
+    ;
 
 setClause
 	: (SET^ assignment (COMMA! assignment)*)
@@ -267,7 +286,7 @@ deleteStatement
 	;
 
 optionalFromTokenFromClause!
-	: (FROM!)? f:path (a:asAlias)? {
+	: {matchOptionalFrom();} f:path (a:asAlias)? {
 		AST #range = #([RANGE, "RANGE"], #f, #a);
 		#optionalFromTokenFromClause = #([FROM, "FROM"], #range);
 	}
@@ -593,7 +612,7 @@ relationalExpression
 					#l.setText( (n == null) ? "like" : "not like");
 				}
 				concatenation likeEscape)
-			| (MEMBER! (OF!)? p:path! {
+			| (MEMBER! (OF!)? p:memberOfPath! {
 				processMemberOf(n,#p,currentAST);
 			  } ) )
 		)
@@ -610,6 +629,14 @@ inList
 
 betweenList
 	: concatenation AND! concatenation
+	;
+
+memberOfPath
+	// JPA says this is a `collection_valued_path_expression` which is essentially either:
+	// 		1) a treated path followed by a collection-valued attribute reference
+	//		2) a path
+	: { validateSoftKeyword("treat") && LA(2) == OPEN }? i:IDENT! OPEN! p:path AS! a:path! CLOSE! ( DOT^ path )
+	| path
 	;
 
 //level 4 - string concatenation
@@ -849,7 +876,7 @@ constant
 //## path: identifier ( '.' identifier )*;
 
 path
-	: identifier ( DOT^ { weakKeywords(); } identifier )*
+	: {firstPathTokenWeakKeywords();} identifier ( DOT^ { weakKeywords(); } identifier )*
 	;
 
 // Wraps the IDENT token from the lexer, in order to provide

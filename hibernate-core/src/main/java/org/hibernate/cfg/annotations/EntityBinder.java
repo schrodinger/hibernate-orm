@@ -14,6 +14,7 @@ import java.util.Locale;
 import javax.persistence.Access;
 import javax.persistence.ConstraintMode;
 import javax.persistence.Entity;
+import javax.persistence.InheritanceType;
 import javax.persistence.JoinColumn;
 import javax.persistence.JoinTable;
 import javax.persistence.NamedEntityGraph;
@@ -100,8 +101,8 @@ import static org.hibernate.cfg.BinderHelper.toAliasTableMap;
  * @author Emmanuel Bernard
  */
 public class EntityBinder {
-    private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, EntityBinder.class.getName());
-    private static final String NATURAL_ID_CACHE_SUFFIX = "##NaturalId";
+	private static final CoreMessageLogger LOG = Logger.getMessageLogger(CoreMessageLogger.class, EntityBinder.class.getName());
+	private static final String NATURAL_ID_CACHE_SUFFIX = "##NaturalId";
 
 	private MetadataBuildingContext context;
 
@@ -159,6 +160,23 @@ public class EntityBinder {
 		bindHibernateAnnotation( hibAnn );
 	}
 
+	/**
+	 * For the most part, this is a simple delegation to {@link PersistentClass#isPropertyDefinedInHierarchy},
+	 * afterQuery verifying that PersistentClass is indeed set here.
+	 *
+	 * @param name The name of the property to check
+	 *
+	 * @return {@code true} if a property by that given name does already exist in the super hierarchy.
+	 */
+	@SuppressWarnings("SimplifiableIfStatement")
+	public boolean isPropertyDefinedInSuperHierarchy(String name) {
+		// Yes, yes... persistentClass can be null because EntityBinder can be used
+		// to bind components as well, of course...
+		if ( persistentClass == null ) {
+			return false;
+		}
+		return persistentClass.isPropertyDefinedInSuperHierarchy( name );
+	}
 
 	@SuppressWarnings("SimplifiableConditionalExpression")
 	private void bindHibernateAnnotation(org.hibernate.annotations.Entity hibAnn) {
@@ -278,10 +296,10 @@ public class EntityBinder {
 			}
 		}
 		else {
-            if (explicitHibernateEntityAnnotation) {
+			if (explicitHibernateEntityAnnotation) {
 				LOG.entityAnnotationOnNonRoot(annotatedClass.getName());
 			}
-            if (annotatedClass.isAnnotationPresent(Immutable.class)) {
+			if (annotatedClass.isAnnotationPresent(Immutable.class)) {
 				LOG.immutableAnnotationOnNonRoot(annotatedClass.getName());
 			}
 		}
@@ -679,8 +697,8 @@ public class EntityBinder {
 
 	public void finalSecondaryTableBinding(PropertyHolder propertyHolder) {
 		/*
-		 * Those operations has to be done after the id definition of the persistence class.
-		 * ie after the properties parsing
+		 * Those operations has to be done afterQuery the id definition of the persistence class.
+		 * ie afterQuery the properties parsing
 		 */
 		Iterator joins = secondaryTables.values().iterator();
 		Iterator joinColumns = secondaryTableJoins.values().iterator();
@@ -789,6 +807,7 @@ public class EntityBinder {
 				}
 				else {
 					( (SimpleValue) join.getKey() ).setForeignKeyName( StringHelper.nullIfEmpty( jpaSecondaryTable.foreignKey().name() ) );
+					( (SimpleValue) join.getKey() ).setForeignKeyDefinition( StringHelper.nullIfEmpty( jpaSecondaryTable.foreignKey().foreignKeyDefinition() ) );
 				}
 			}
 		}
@@ -1141,7 +1160,7 @@ public class EntityBinder {
 	public AccessType getPropertyAccessor(XAnnotatedElement element) {
 		AccessType accessType = getExplicitAccessType( element );
 		if ( accessType == null ) {
-		   accessType = propertyAccessType;
+			accessType = propertyAccessType;
 		}
 		return accessType;
 	}

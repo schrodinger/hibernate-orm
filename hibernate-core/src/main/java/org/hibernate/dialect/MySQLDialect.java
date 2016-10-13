@@ -85,6 +85,7 @@ public class MySQLDialect extends Dialect {
 //		registerColumnType( Types.BLOB, 16777215, "mediumblob" );
 //		registerColumnType( Types.BLOB, 65535, "blob" );
 		registerColumnType( Types.CLOB, "longtext" );
+		registerColumnType( Types.NCLOB, "longtext" );
 //		registerColumnType( Types.CLOB, 16777215, "mediumtext" );
 //		registerColumnType( Types.CLOB, 65535, "text" );
 		registerVarcharTypes();
@@ -340,6 +341,8 @@ public class MySQLDialect extends Dialect {
 	@Override
 	public String getCastTypeName(int code) {
 		switch ( code ) {
+			case Types.BOOLEAN:
+				return "char";
 			case Types.INTEGER:
 			case Types.BIGINT:
 			case Types.SMALLINT:
@@ -521,5 +524,10 @@ public class MySQLDialect extends Dialect {
 	@Override
 	public IdentityColumnSupport getIdentityColumnSupport() {
 		return new MySQLIdentityColumnSupport();
+	}
+
+	@Override
+	public boolean isJdbcLogWarningsEnabledByDefault() {
+		return false;
 	}
 }

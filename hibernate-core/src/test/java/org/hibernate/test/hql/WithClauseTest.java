@@ -6,22 +6,26 @@
  */
 package org.hibernate.test.hql;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 import org.hibernate.HibernateException;
 import org.hibernate.Query;
+import org.hibernate.QueryException;
 import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.hibernate.hql.internal.ast.InvalidWithClauseException;
+
 import org.hibernate.testing.TestForIssue;
 import org.hibernate.testing.junit4.BaseCoreFunctionalTestCase;
 import org.junit.Test;
+
+import static org.hibernate.testing.junit4.ExtraAssertions.assertTyping;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * Implementation of WithClauseTest.
@@ -46,6 +50,9 @@ public class WithClauseTest extends BaseCoreFunctionalTestCase {
 			        .setDouble( "someLimit", 1 )
 			        .list();
 			fail( "ad-hoc on clause allowed with fetched association" );
+		}
+		catch (IllegalArgumentException e) {
+			assertTyping( QueryException.class, e.getCause() );
 		}
 		catch ( HibernateException e ) {
 			// the expected response...
@@ -72,6 +79,9 @@ public class WithClauseTest extends BaseCoreFunctionalTestCase {
 					.list();
 			fail( "failure expected" );
 		}
+		catch (IllegalArgumentException e) {
+			assertTyping( QueryException.class, e.getCause() );
+		}
 		catch( InvalidWithClauseException expected ) {
 		}
 
@@ -80,6 +90,9 @@ public class WithClauseTest extends BaseCoreFunctionalTestCase {
 					.setEntity( "cousin", s.load( Human.class, new Long(123) ) )
 					.list();
 			fail( "failure expected" );
+		}
+		catch (IllegalArgumentException e) {
+			assertTyping( QueryException.class, e.getCause() );
 		}
 		catch( InvalidWithClauseException expected ) {
 		}
@@ -165,6 +178,48 @@ public class WithClauseTest extends BaseCoreFunctionalTestCase {
 		s.close();
 	}
 
+	@Test
+	@TestForIssue(jiraKey = "HHH-9329")
+	public void testWithClauseAsSubquery() {
+		TestData data = new TestData();
+		data.prepare();
+
+		Session s = openSession();
+		Transaction txn = s.beginTransaction();
+
+		// Since friends has a join table, we will first left join all friends and then do the WITH clause on the target entity table join
+		// Normally this produces 2 results which is wrong and can only be circumvented by converting the join table and target entity table join to a subquery
+		List list = s.createQuery( "from Human h left join h.friends as f with f.nickName like 'bubba' where h.description = 'father'" )
+				.list();
+		assertEquals( "subquery rewriting of join table did not take effect", 1, list.size() );
+
+		txn.commit();
+		s.close();
+
+		data.cleanup();
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-9329")
+	public void testWithClauseAsSubqueryWithKey() {
+		TestData data = new TestData();
+		data.prepare();
+
+		Session s = openSession();
+		Transaction txn = s.beginTransaction();
+
+		// Since family has a join table, we will first left join all family members and then do the WITH clause on the target entity table join
+		// Normally this produces 2 results which is wrong and can only be circumvented by converting the join table and target entity table join to a subquery
+		List list = s.createQuery( "from Human h left join h.family as f with key(f) like 'son1' where h.description = 'father'" )
+				.list();
+		assertEquals( "subquery rewriting of join table did not take effect", 1, list.size() );
+
+		txn.commit();
+		s.close();
+
+		data.cleanup();
+	}
+
 	private class TestData {
 		public void prepare() {
 			Session session = openSession();
@@ -190,6 +245,10 @@ public class WithClauseTest extends BaseCoreFunctionalTestCase {
 			friend.setBodyWeight( 20 );
 			friend.setDescription( "friend" );
 
+			Human friend2 = new Human();
+			friend2.setBodyWeight( 20 );
+			friend2.setDescription( "friend2" );
+
 			child1.setMother( mother );
 			child1.setFather( father );
 			mother.addOffspring( child1 );
@@ -202,12 +261,18 @@ public class WithClauseTest extends BaseCoreFunctionalTestCase {
 
 			father.setFriends( new ArrayList() );
 			father.getFriends().add( friend );
+			father.getFriends().add( friend2 );
 
 			session.save( mother );
 			session.save( father );
 			session.save( child1 );
 			session.save( child2 );
 			session.save( friend );
+			session.save( friend2 );
+
+			father.setFamily( new HashMap() );
+			father.getFamily().put( "son1", child1 );
+			father.getFamily().put( "son2", child2 );
 
 			txn.commit();
 			session.close();
@@ -218,7 +283,9 @@ public class WithClauseTest extends BaseCoreFunctionalTestCase {
 			Transaction txn = session.beginTransaction();
 			Human father = (Human) session.createQuery( "from Human where description = 'father'" ).uniqueResult();
 			father.getFriends().clear();
+			father.getFamily().clear();
 			session.flush();
+			session.delete( session.createQuery( "from Human where description = 'friend2'" ).uniqueResult() );
 			session.delete( session.createQuery( "from Human where description = 'friend'" ).uniqueResult() );
 			session.delete( session.createQuery( "from Human where description = 'child1'" ).uniqueResult() );
 			session.delete( session.createQuery( "from Human where description = 'child2'" ).uniqueResult() );

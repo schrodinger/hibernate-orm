@@ -23,7 +23,6 @@ import javax.transaction.SystemException;
 
 import org.hibernate.HibernateException;
 import org.hibernate.LockMode;
-import org.hibernate.annotations.common.reflection.XClass;
 import org.hibernate.cache.CacheException;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.jdbc.dialect.spi.DialectResolver;
@@ -53,7 +52,7 @@ import static org.jboss.logging.Logger.Level.WARN;
  * The jboss-logging {@link MessageLogger} for the hibernate-core module.  It reserves message ids ranging from
  * 00001 to 10000 inclusively.
  * <p/>
- * New messages must be added after the last message defined to ensure message codes are unique.
+ * New messages must be added afterQuery the last message defined to ensure message codes are unique.
  */
 @MessageLogger(projectCode = "HHH")
 public interface CoreMessageLogger extends BasicLogger {
@@ -445,8 +444,8 @@ public interface CoreMessageLogger extends BasicLogger {
 	void invalidOnDeleteAnnotation(String entityName);
 
 	@LogMessage(level = WARN)
-	@Message(value = "Root entity should not hold an PrimaryKeyJoinColum(s), will be ignored", id = 137)
-	void invalidPrimaryKeyJoinColumnAnnotation();
+	@Message(value = "Root entity should not hold an PrimaryKeyJoinColum(s), will be ignored: %s", id = 137)
+	void invalidPrimaryKeyJoinColumnAnnotation(String className);
 
 	@LogMessage(level = WARN)
 	@Message(value = "Mixing inheritance strategy in a entity hierarchy is not allowed, ignoring sub strategy in: %s",
@@ -736,7 +735,7 @@ public interface CoreMessageLogger extends BasicLogger {
 	void schemaUpdateComplete();
 
 	@LogMessage(level = WARN)
-	@Message(value = "Scoping types to session factory %s after already scoped %s", id = 233)
+	@Message(value = "Scoping types to session factory %s afterQuery already scoped %s", id = 233)
 	void scopingTypesToSessionFactoryAfterAlreadyScoped(
 			SessionFactoryImplementor factory,
 			SessionFactoryImplementor factory2);
@@ -928,7 +927,7 @@ public interface CoreMessageLogger extends BasicLogger {
 	void unableToCleanUpPreparedStatement(@Cause SQLException e);
 
 	@LogMessage(level = WARN)
-	@Message(value = "Unable to cleanup temporary id table after use [%s]", id = 283)
+	@Message(value = "Unable to cleanup temporary id table afterQuery use [%s]", id = 283)
 	void unableToCleanupTemporaryIdTable(Throwable t);
 
 	@LogMessage(level = ERROR)
@@ -1059,16 +1058,16 @@ public interface CoreMessageLogger extends BasicLogger {
 	@Message(value = "Could not determine transaction status", id = 312)
 	String unableToDetermineTransactionStatus();
 
-	@Message(value = "Could not determine transaction status after commit", id = 313)
+	@Message(value = "Could not determine transaction status afterQuery commit", id = 313)
 	String unableToDetermineTransactionStatusAfterCommit();
 
 	@LogMessage(level = WARN)
-	@Message(value = "Unable to drop temporary id table after use [%s]", id = 314)
+	@Message(value = "Unable to drop temporary id table afterQuery use [%s]", id = 314)
 	void unableToDropTemporaryIdTable(String message);
 
 	@LogMessage(level = ERROR)
-	@Message(value = "Exception executing batch [%s]", id = 315)
-	void unableToExecuteBatch(String message);
+	@Message(value = "Exception executing batch [%s], SQL: %s", id = 315)
+	void unableToExecuteBatch(Exception e, String sql );
 
 	@LogMessage(level = WARN)
 	@Message(value = "Error executing resolver [%s] : %s", id = 316)
@@ -1239,7 +1238,7 @@ public interface CoreMessageLogger extends BasicLogger {
 	void unableToResolveMappingFile(String xmlFile);
 
 	@LogMessage(level = INFO)
-	@Message(value = "Unable to retreive cache from JNDI [%s]: %s", id = 361)
+	@Message(value = "Unable to retrieve cache from JNDI [%s]: %s", id = 361)
 	void unableToRetrieveCache(
 			String namespace,
 			String message);
@@ -1357,8 +1356,12 @@ public interface CoreMessageLogger extends BasicLogger {
 	@Message(value = "Unsuccessful: %s", id = 388)
 	void unsuccessful(String sql);
 
+	/**
+	 * @deprecated Use {@link #unsuccessfulSchemaManagementCommand} instead
+	 */
 	@LogMessage(level = ERROR)
 	@Message(value = "Unsuccessful: %s", id = 389)
+	@Deprecated
 	void unsuccessfulCreate(String string);
 
 	@LogMessage(level = WARN)
@@ -1594,7 +1597,7 @@ public interface CoreMessageLogger extends BasicLogger {
 	@LogMessage(level = WARN)
 	@Message(
 			value = "Encountered request for locking however dialect reports that database prefers locking be done in a " +
-					"separate select (follow-on locking); results will be locked after initial query executes",
+					"separate select (follow-on locking); results will be locked afterQuery initial query executes",
 			id = 444
 	)
 	void usingFollowOnLocking();
@@ -1729,4 +1732,27 @@ public interface CoreMessageLogger extends BasicLogger {
 	@LogMessage(level = INFO)
 	@Message(value = "Cannot locate column information using identifier [%s]; ignoring index [%s]", id = 475 )
 	void logCannotLocateIndexColumnInformation(String columnIdentifierText, String indexIdentifierText);
+
+	@LogMessage(level = INFO)
+	@Message(value = "Executing import script '%s'", id = 476)
+	void executingImportScript(String scriptName);
+
+	@LogMessage(level = INFO)
+	@Message(value = "Starting delayed drop of schema as part of SessionFactory shut-down'", id = 477)
+	void startingDelayedSchemaDrop();
+
+	@LogMessage(level = ERROR)
+	@Message(value = "Unsuccessful: %s", id = 478)
+	void unsuccessfulSchemaManagementCommand(String command);
+
+	@Message(
+			value = "Collection [%s] was not processed by flush()."
+			+ " This is likely due to unsafe use of the session (e.g. used in multiple threads concurrently, updates during entity lifecycle hooks).",
+			id = 479
+	)
+	String collectionNotProcessedByFlush(String role);
+
+	@LogMessage(level = WARN)
+	@Message(value = "A ManagedEntity was associated with a stale PersistenceContext. A ManagedEntity may only be associated with one PersistenceContext at a time; %s", id = 480)
+	void stalePersistenceContextInEntityEntry(String msg);
 }

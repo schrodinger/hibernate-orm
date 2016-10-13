@@ -17,11 +17,11 @@ import org.hibernate.cache.infinispan.access.TxInvalidationCacheAccessDelegate;
 import org.hibernate.cache.infinispan.access.VersionedCallInterceptor;
 import org.hibernate.cache.infinispan.util.Caches;
 import org.hibernate.cache.infinispan.util.FutureUpdate;
+import org.hibernate.cache.infinispan.util.InfinispanMessageLogger;
 import org.hibernate.cache.infinispan.util.Tombstone;
 import org.hibernate.cache.infinispan.util.VersionedEntry;
 import org.hibernate.cache.spi.CacheDataDescription;
 import org.hibernate.cache.spi.CacheKeysFactory;
-import org.hibernate.cache.spi.RegionFactory;
 import org.hibernate.cache.spi.TransactionalDataRegion;
 
 import org.hibernate.cache.spi.access.AccessType;
@@ -33,12 +33,9 @@ import org.infinispan.container.entries.CacheEntry;
 import org.infinispan.filter.KeyValueFilter;
 import org.infinispan.interceptors.CallInterceptor;
 import org.infinispan.interceptors.base.CommandInterceptor;
-import org.infinispan.util.logging.Log;
-import org.infinispan.util.logging.LogFactory;
 
 import javax.transaction.TransactionManager;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -52,7 +49,7 @@ import java.util.concurrent.TimeUnit;
  */
 public abstract class BaseTransactionalDataRegion
 		extends BaseRegion implements TransactionalDataRegion {
-	private static final Log log = LogFactory.getLog( BaseTransactionalDataRegion.class );
+	private static final InfinispanMessageLogger log = InfinispanMessageLogger.Provider.getLog( BaseTransactionalDataRegion.class );
 	private final CacheDataDescription metadata;
 	private final CacheKeysFactory cacheKeysFactory;
 	private final boolean requiresTransaction;
@@ -69,8 +66,7 @@ public abstract class BaseTransactionalDataRegion
 
 	/**
 	 * Base transactional region constructor
-	 *
-	 * @param cache instance to store transactional data
+	 *  @param cache instance to store transactional data
 	 * @param name of the transactional region
 	 * @param transactionManager
 	 * @param metadata for the transactional region
@@ -79,7 +75,7 @@ public abstract class BaseTransactionalDataRegion
 	 */
 	public BaseTransactionalDataRegion(
 			AdvancedCache cache, String name, TransactionManager transactionManager,
-			CacheDataDescription metadata, RegionFactory factory, CacheKeysFactory cacheKeysFactory) {
+			CacheDataDescription metadata, InfinispanRegionFactory factory, CacheKeysFactory cacheKeysFactory) {
 		super( cache, name, transactionManager, factory);
 		this.metadata = metadata;
 		this.cacheKeysFactory = cacheKeysFactory;
@@ -87,8 +83,7 @@ public abstract class BaseTransactionalDataRegion
 		Configuration configuration = cache.getCacheConfiguration();
 		requiresTransaction = configuration.transaction().transactionMode().isTransactional()
 				&& !configuration.transaction().autoCommit();
-		// TODO: make these timeouts configurable
-		tombstoneExpiration = InfinispanRegionFactory.PENDING_PUTS_CACHE_CONFIGURATION.expiration().maxIdle();
+		tombstoneExpiration = factory.getPendingPutsCacheConfiguration().expiration().maxIdle();
 		if (!isRegionAccessStrategyEnabled()) {
 			strategy = Strategy.NONE;
 		}
@@ -144,7 +139,7 @@ public abstract class BaseTransactionalDataRegion
 			assert strategy == Strategy.VALIDATION;
 			return;
 		}
-		validator = new PutFromLoadValidator(cache);
+		validator = new PutFromLoadValidator(cache, factory);
 		strategy = Strategy.VALIDATION;
 	}
 
@@ -169,7 +164,7 @@ public abstract class BaseTransactionalDataRegion
 		}
 		Configuration configuration = cache.getCacheConfiguration();
 		if (configuration.eviction().maxEntries() >= 0) {
-			log.warn("Setting eviction on cache using tombstones can introduce inconsistencies!");
+			log.evictionWithTombstones();
 		}
 
 		cache.removeInterceptor(CallInterceptor.class);

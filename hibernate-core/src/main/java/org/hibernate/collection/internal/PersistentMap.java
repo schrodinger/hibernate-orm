@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.hibernate.HibernateException;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.loader.CollectionAliases;
 import org.hibernate.persister.collection.CollectionPersister;
 import org.hibernate.type.Type;
@@ -50,7 +50,7 @@ public class PersistentMap extends AbstractPersistentCollection implements Map {
 	 *
 	 * @param session The session to which this map will belong.
 	 */
-	public PersistentMap(SessionImplementor session) {
+	public PersistentMap(SharedSessionContractImplementor session) {
 		super( session );
 	}
 
@@ -61,7 +61,7 @@ public class PersistentMap extends AbstractPersistentCollection implements Map {
 	 * @param session The session to which this map will belong.
 	 * @param map The underlying map data.
 	 */
-	public PersistentMap(SessionImplementor session, Map map) {
+	public PersistentMap(SharedSessionContractImplementor session, Map map) {
 		super( session );
 		this.map = map;
 		setInitialized();
@@ -264,7 +264,7 @@ public class PersistentMap extends AbstractPersistentCollection implements Map {
 		if ( element != null ) {
 			final Object index = persister.readIndex( rs, descriptor.getSuffixedIndexAliases(), getSession() );
 			if ( loadingEntries == null ) {
-				loadingEntries = new ArrayList<Object[]>();
+				loadingEntries = new ArrayList<>();
 			}
 			loadingEntries.add( new Object[] { index, element } );
 		}
@@ -570,59 +570,42 @@ public class PersistentMap extends AbstractPersistentCollection implements Map {
 		}
 	}
 
-	final class Put implements DelayedOperation {
+	abstract class AbstractMapValueDelayedOperation extends AbstractValueDelayedOperation {
 		private Object index;
-		private Object value;
-		private Object old;
-		
-		public Put(Object index, Object value, Object old) {
+
+		protected AbstractMapValueDelayedOperation(Object index, Object addedValue, Object orphan) {
+			super( addedValue, orphan );
 			this.index = index;
-			this.value = value;
-			this.old = old;
 		}
 
-		@Override
-		@SuppressWarnings("unchecked")
-		public void operate() {
-			map.put( index, value );
-		}
-
-		@Override
-		@SuppressWarnings("unchecked")
-		public Object getAddedInstance() {
-			return value;
-		}
-
-		@Override
-		@SuppressWarnings("unchecked")
-		public Object getOrphan() {
-			return old;
+		protected final Object getIndex() {
+			return index;
 		}
 	}
 
-	final class Remove implements DelayedOperation {
-		private Object index;
-		private Object old;
-		
-		public Remove(Object index, Object old) {
-			this.index = index;
-			this.old = old;
+	final class Put extends AbstractMapValueDelayedOperation {
+
+		public Put(Object index, Object addedValue, Object orphan) {
+			super( index, addedValue, orphan );
 		}
 
 		@Override
 		@SuppressWarnings("unchecked")
 		public void operate() {
-			map.remove( index );
+			map.put( getIndex(), getAddedInstance() );
+		}
+	}
+
+	final class Remove extends AbstractMapValueDelayedOperation {
+
+		public Remove(Object index, Object orphan) {
+			super( index, null, orphan );
 		}
 
 		@Override
-		public Object getAddedInstance() {
-			return null;
-		}
-
-		@Override
-		public Object getOrphan() {
-			return old;
+		@SuppressWarnings("unchecked")
+		public void operate() {
+			map.remove( getIndex() );
 		}
 	}
 }

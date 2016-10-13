@@ -994,6 +994,8 @@ public class ModelBinder {
 				rootEntityDescriptor.getTable()
 		);
 
+		versionValue.makeVersion();
+
 		bindSimpleValueType(
 				sourceDocument,
 				versionAttributeSource.getTypeInformation(),
@@ -1701,27 +1703,26 @@ public class ModelBinder {
 			List<RelationalValueSource> relationalValueSources) {
 		String tableName = null;
 		for ( RelationalValueSource relationalValueSource : relationalValueSources ) {
-			if ( ColumnSource.class.isInstance( relationalValueSource ) ) {
-				final ColumnSource columnSource = (ColumnSource) relationalValueSource;
-				if ( EqualsHelper.equals( tableName, columnSource.getContainingTableName() ) ) {
-					continue;
-				}
-
-				if ( tableName != null ) {
-					throw new MappingException(
-							String.format(
-									Locale.ENGLISH,
-									"Attribute [%s] referenced columns from multiple tables: %s, %s",
-									attributeName,
-									tableName,
-									columnSource.getContainingTableName()
-							),
-							mappingDocument.getOrigin()
-					);
-				}
-
-				tableName = columnSource.getContainingTableName();
+			// We need to get the containing table name for both columns and formulas,
+			// particularly when a column/formula is for a property on a secondary table.
+			if ( EqualsHelper.equals( tableName, relationalValueSource.getContainingTableName() ) ) {
+				continue;
 			}
+
+			if ( tableName != null ) {
+				throw new MappingException(
+						String.format(
+								Locale.ENGLISH,
+								"Attribute [%s] referenced columns from multiple tables: %s, %s",
+								attributeName,
+								tableName,
+								relationalValueSource.getContainingTableName()
+						),
+						mappingDocument.getOrigin()
+				);
+			}
+
+			tableName = relationalValueSource.getContainingTableName();
 		}
 
 		return database.toIdentifier( tableName );
@@ -1816,8 +1817,11 @@ public class ModelBinder {
 
 		keyBinding.setForeignKeyName( secondaryTableSource.getExplicitForeignKeyName() );
 
-		secondaryTableJoin.createPrimaryKey();
-		secondaryTableJoin.createForeignKey();
+		// skip creating primary and foreign keys for a subselect.
+		if ( secondaryTable.getSubselect() == null ) {
+			secondaryTableJoin.createPrimaryKey();
+			secondaryTableJoin.createForeignKey();
+		}
 	}
 
 	private Property createEmbeddedAttribute(
@@ -1890,7 +1894,7 @@ public class ModelBinder {
 				sourceDocument,
 				attributeSource.getRelationalValueSources(),
 				value,
-				true,
+				attributeSource.areValuesNullableByDefault(),
 				new RelationalObjectBinder.ColumnNamingDelegate() {
 					@Override
 					public Identifier determineImplicitName(LocalMetadataBuildingContext context) {
@@ -2895,11 +2899,12 @@ public class ModelBinder {
 		if ( isTable ) {
 			final TableSource tableSource = (TableSource) tableSpecSource;
 			table.setRowId( tableSource.getRowId() );
-			table.setComment( tableSource.getComment() );
 			if ( StringHelper.isNotEmpty( tableSource.getCheckConstraint() ) ) {
 				table.addCheckConstraint( tableSource.getCheckConstraint() );
 			}
-		}
+		} 
+
+		table.setComment(tableSpecSource.getComment());
 
 		mappingDocument.getMetadataCollector().addTableNameBinding( logicalTableName, table );
 
@@ -3386,7 +3391,7 @@ public class ModelBinder {
 
 				makeIdentifier(
 						mappingDocument,
-						new IdentifierGeneratorDefinition( idSource.getGeneratorName() ),
+						new IdentifierGeneratorDefinition( idSource.getGeneratorName(), idSource.getParameters() ),
 						null,
 						idBinding
 				);

@@ -22,14 +22,12 @@ import java.util.concurrent.TimeUnit;
 
 import org.hibernate.FlushMode;
 import org.hibernate.LockMode;
+import org.hibernate.cache.infinispan.util.InfinispanMessageLogger;
 import org.hibernate.stat.SecondLevelCacheStatistics;
 
 import org.hibernate.test.cache.infinispan.functional.entities.Contact;
 import org.hibernate.test.cache.infinispan.functional.entities.Customer;
 import org.junit.Test;
-
-import org.infinispan.util.logging.Log;
-import org.infinispan.util.logging.LogFactory;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -40,7 +38,7 @@ import static org.junit.Assert.assertNull;
  * @author Galder Zamarreño
  */
 public class ConcurrentWriteTest extends SingleNodeTest {
-	private static final Log log = LogFactory.getLog( ConcurrentWriteTest.class );
+	private static final InfinispanMessageLogger log = InfinispanMessageLogger.Provider.getLog( ConcurrentWriteTest.class );
 	private static final boolean trace = log.isTraceEnabled();
 	/**
 	 * when USER_COUNT==1, tests pass, when >4 tests fail
@@ -91,14 +89,14 @@ public class ConcurrentWriteTest extends SingleNodeTest {
 	public void testSingleUser() throws Exception {
 		// setup
 		sessionFactory().getStatistics().clear();
-		// wait a while to make sure that timestamp comparison works after invalidateRegion
+		// wait a while to make sure that timestamp comparison works afterQuery invalidateRegion
 		Thread.sleep(1);
 
 		Customer customer = createCustomer( 0 );
 		final Integer customerId = customer.getId();
 		getCustomerIDs().add( customerId );
 
-		// wait a while to make sure that timestamp comparison works after collection remove (during insert)
+		// wait a while to make sure that timestamp comparison works afterQuery collection remove (during insert)
 		Thread.sleep(1);
 
 		assertNull( "contact exists despite not being added", getFirstContact( customerId ) );
@@ -122,17 +120,17 @@ public class ConcurrentWriteTest extends SingleNodeTest {
 		final Contact contact = addContact( customerId );
 		assertNotNull( "contact returned by addContact is null", contact );
 		assertEquals(
-				"Customer.contacts cache was not invalidated after addContact", 0,
+				"Customer.contacts cache was not invalidated afterQuery addContact", 0,
 				contactsCollectionSlcs.getElementCountInMemory()
 		);
 
-		assertNotNull( "Contact missing after successful add call", getFirstContact( customerId ) );
+		assertNotNull( "Contact missing afterQuery successful add call", getFirstContact( customerId ) );
 
 		// read everyone's contacts
 		readEveryonesFirstContact();
 
 		removeContact( customerId );
-		assertNull( "contact still exists after successful remove call", getFirstContact( customerId ) );
+		assertNull( "contact still exists afterQuery successful remove call", getFirstContact( customerId ) );
 
 	}
 

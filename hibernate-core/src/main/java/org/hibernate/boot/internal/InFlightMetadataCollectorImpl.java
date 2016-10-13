@@ -78,7 +78,6 @@ import org.hibernate.id.factory.IdentifierGeneratorFactory;
 import org.hibernate.id.factory.spi.MutableIdentifierGeneratorFactory;
 import org.hibernate.internal.CoreLogging;
 import org.hibernate.internal.CoreMessageLogger;
-import org.hibernate.internal.NamedQueryRepository;
 import org.hibernate.internal.SessionFactoryImpl;
 import org.hibernate.internal.util.collections.CollectionHelper;
 import org.hibernate.mapping.Collection;
@@ -97,6 +96,7 @@ import org.hibernate.mapping.RootClass;
 import org.hibernate.mapping.SimpleValue;
 import org.hibernate.mapping.Table;
 import org.hibernate.mapping.UniqueKey;
+import org.hibernate.query.spi.NamedQueryRepository;
 import org.hibernate.type.TypeResolver;
 
 /**
@@ -1567,7 +1567,7 @@ public class InFlightMetadataCollectorImpl implements InFlightMetadataCollector 
 
 
 	/**
-	 * Ugh!  But we need this done before we ask Envers to produce its entities.
+	 * Ugh!  But we need this done beforeQuery we ask Envers to produce its entities.
 	 */
 	public void processSecondPasses(MetadataBuildingContext buildingContext) {
 		inSecondPass = true;
@@ -1727,8 +1727,7 @@ public class InFlightMetadataCollectorImpl implements InFlightMetadataCollector 
 		for ( FkSecondPass sp : dependencies ) {
 			String dependentTable = sp.getValue().getTable().getQualifiedTableName().render();
 			if ( dependentTable.compareTo( startTable ) == 0 ) {
-				String sb = "Foreign key circularity dependency involving the following tables: ";
-				throw new AnnotationException( sb );
+				throw new AnnotationException( "Foreign key circularity dependency involving the following tables: " + startTable + ", " + dependentTable );
 			}
 			buildRecursiveOrderedFkSecondPasses( orderedFkSecondPasses, isADependencyOf, startTable, dependentTable );
 			if ( !orderedFkSecondPasses.contains( sp ) ) {
@@ -2040,7 +2039,13 @@ public class InFlightMetadataCollectorImpl implements InFlightMetadataCollector 
 		}
 
 		if ( unbound.size() > 0 || unboundNoLogical.size() > 0 ) {
-			StringBuilder sb = new StringBuilder( "Unable to create unique key constraint (" );
+			StringBuilder sb = new StringBuilder( "Unable to create " );
+			if ( unique ) {
+				sb.append( "unique key constraint (" );
+			}
+			else {
+				sb.append( "index (" );
+			}
 			for ( String columnName : columnNames ) {
 				sb.append( columnName ).append( ", " );
 			}

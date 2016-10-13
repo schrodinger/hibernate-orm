@@ -18,6 +18,7 @@ import org.hibernate.boot.internal.SessionFactoryBuilderImpl;
 import org.hibernate.boot.internal.SessionFactoryOptionsImpl;
 import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.boot.spi.SessionFactoryOptions;
 import org.hibernate.cache.infinispan.InfinispanRegionFactory;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.Environment;
@@ -28,6 +29,8 @@ import org.hibernate.internal.util.compare.EqualsHelper;
 import org.hibernate.resource.transaction.backend.jdbc.internal.JdbcResourceLocalTransactionCoordinatorBuilderImpl;
 import org.hibernate.resource.transaction.backend.jta.internal.JtaTransactionCoordinatorBuilderImpl;
 import org.hibernate.service.ServiceRegistry;
+
+import org.hibernate.testing.boot.ServiceRegistryTestingImpl;
 
 /**
  * Utilities for cache testing.
@@ -183,7 +186,7 @@ public class CacheTestUtil {
 	/**
 	 * Periodically calls callable and compares returned value with expected value. If the value matches to expected,
 	 * the method returns. If callable throws an exception, this is propagated. If the returned value does not match to
-	 * expected before timeout, {@link TimeoutException} is thrown.
+	 * expected beforeQuery timeout, {@link TimeoutException} is thrown.
 	 * @param expected
 	 * @param callable
 	 * @param timeout If non-positive, there is no limit.
@@ -201,6 +204,14 @@ public class CacheTestUtil {
 			} else break;
 		}
 		throw new TimeoutException();
+	}
+
+	public static SessionFactoryOptions sfOptionsForStart() {
+		return new SessionFactoryOptionsImpl(
+				new SessionFactoryBuilderImpl.SessionFactoryOptionsStateStandardImpl(
+						ServiceRegistryTestingImpl.forUnitTesting()
+				)
+		);
 	}
 
 	/**

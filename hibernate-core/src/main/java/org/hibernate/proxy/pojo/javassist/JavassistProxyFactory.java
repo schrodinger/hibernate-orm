@@ -15,7 +15,7 @@ import javassist.util.proxy.MethodFilter;
 import javassist.util.proxy.Proxy;
 
 import org.hibernate.HibernateException;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.ReflectHelper;
 import org.hibernate.internal.util.collections.ArrayHelper;
@@ -36,7 +36,7 @@ public class JavassistProxyFactory implements ProxyFactory, Serializable {
 	private static final MethodFilter FINALIZE_FILTER = new MethodFilter() {
 		public boolean isHandled(Method m) {
 			// skip finalize methods
-			return !( m.getParameterTypes().length == 0 && m.getName().equals( "finalize" ) );
+			return !( m.getParameterCount() == 0 && m.getName().equals( "finalize" ) );
 		}
 	};
 
@@ -105,7 +105,7 @@ public class JavassistProxyFactory implements ProxyFactory, Serializable {
 	@Override
 	public HibernateProxy getProxy(
 			Serializable id,
-			SessionImplementor session) throws HibernateException {
+			SharedSessionContractImplementor session) throws HibernateException {
 		final JavassistLazyInitializer initializer = new JavassistLazyInitializer(
 				entityName,
 				persistentClass,

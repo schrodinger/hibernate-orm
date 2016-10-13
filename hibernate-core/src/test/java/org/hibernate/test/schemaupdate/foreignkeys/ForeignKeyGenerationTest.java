@@ -8,7 +8,9 @@ package org.hibernate.test.schemaupdate.foreignkeys;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
+import java.util.EnumSet;
 import java.util.List;
 
 import org.hibernate.boot.MetadataSources;
@@ -16,13 +18,14 @@ import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.boot.spi.MetadataImplementor;
 import org.hibernate.tool.hbm2ddl.SchemaExport;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.hibernate.tool.hbm2ddl.TargetTypeHelper;
+import org.hibernate.tool.schema.TargetType;
 
 import org.hibernate.testing.TestForIssue;
 import org.hibernate.testing.junit4.BaseUnitTestCase;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
 
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertThat;
@@ -89,6 +92,54 @@ public class ForeignKeyGenerationTest extends BaseUnitTestCase {
 		) );
 	}
 
+	@Test
+	@TestForIssue(jiraKey = "HHH-10385")
+	public void oneToManyWithJoinTableTest() throws Exception {
+		createSchema( new Class[] {Person.class, Phone.class} );
+
+		/*
+			The generated SQL for the foreign keys should be:
+            alter table PERSON_PHONE add constraint PERSON_ID_FK foreign key (PERSON_ID) references PERSON
+            alter table PERSON_PHONE add constraint PHONE_ID_FK foreign key (PHONE_ID) references PHONE
+        */
+		checkAlterTableStatement( new AlterTableStatement(
+				"PERSON_PHONE",
+				"PERSON_ID_FK",
+				"PERSON_ID",
+				"PERSON"
+		) );
+		checkAlterTableStatement( new AlterTableStatement(
+				"PERSON_PHONE",
+				"PHONE_ID_FK",
+				"PHONE_ID",
+				"PHONE"
+		) );
+	}
+
+	@Test
+	@TestForIssue(jiraKey = "HHH-10386")
+	public void manyToManyTest() throws Exception {
+		createSchema( new Class[] {Project.class, Employee.class} );
+
+                /*
+				The generated SQL for the foreign keys should be:
+                alter table EMPLOYEE_PROJECT add constraint FK_EMPLOYEE foreign key (EMPLOYEE_ID) references EMPLOYEE
+                alter table EMPLOYEE_PROJECT add constraint FK_PROJECT foreign key (PROJECT_ID) references PROJECT
+                */
+		checkAlterTableStatement( new AlterTableStatement(
+				"EMPLOYEE_PROJECT",
+				"FK_EMPLOYEE",
+				"EMPLOYEE_ID",
+				"EMPLOYEE"
+		) );
+		checkAlterTableStatement( new AlterTableStatement(
+				"EMPLOYEE_PROJECT",
+				"FK_PROJECT",
+				"PROJECT_ID",
+				"PROJECT"
+		) );
+	}
+
 	private void createSchema(Class[] annotatedClasses) {
 		final MetadataSources metadataSources = new MetadataSources( ssr );
 
@@ -97,17 +148,17 @@ public class ForeignKeyGenerationTest extends BaseUnitTestCase {
 		}
 		metadata = (MetadataImplementor) metadataSources.buildMetadata();
 		metadata.validate();
-		final SchemaExport schemaExport = new SchemaExport( metadata )
+		new SchemaExport()
 				.setHaltOnError( true )
 				.setOutputFile( output.getAbsolutePath() )
-				.setFormat( false );
-		schemaExport.create( true, false );
+				.setFormat( false )
+				.create( EnumSet.of( TargetType.SCRIPT ), metadata );
 	}
 
 	private void checkAlterTableStatement(AlterTableStatement alterTableStatement)
 			throws Exception {
 		final String expectedAlterTableStatement = alterTableStatement.toSQL();
-		final List<String> sqlLines = Files.readAllLines( output.toPath() );
+		final List<String> sqlLines = Files.readAllLines( output.toPath(), Charset.defaultCharset() );
 		boolean found = false;
 		for ( String line : sqlLines ) {
 			if ( line.contains( expectedAlterTableStatement ) ) {

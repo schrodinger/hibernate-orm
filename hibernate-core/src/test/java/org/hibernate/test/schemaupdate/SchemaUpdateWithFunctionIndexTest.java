@@ -6,6 +6,7 @@
  */
 package org.hibernate.test.schemaupdate;
 
+import java.util.EnumSet;
 import javax.persistence.Basic;
 import javax.persistence.Entity;
 import javax.persistence.Id;
@@ -23,12 +24,14 @@ import org.hibernate.dialect.PostgreSQL81Dialect;
 import org.hibernate.service.ServiceRegistry;
 import org.hibernate.tool.hbm2ddl.SchemaExport;
 import org.hibernate.tool.hbm2ddl.SchemaUpdate;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.hibernate.tool.schema.TargetType;
+
 import org.hibernate.testing.RequiresDialect;
 import org.hibernate.testing.TestForIssue;
 import org.hibernate.testing.junit4.BaseNonConfigCoreFunctionalTestCase;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
 
 /**
  * @author Yoann Rodiere
@@ -41,12 +44,13 @@ public class SchemaUpdateWithFunctionIndexTest extends BaseNonConfigCoreFunction
 
 	@Test
 	public void testUpdateSchema() {
-		SchemaUpdate schemaUpdate = new SchemaUpdate( serviceRegistry, metadata );
-		schemaUpdate.execute( true, true );
+		new SchemaUpdate().execute( EnumSet.of( TargetType.DATABASE, TargetType.STDOUT ), metadata );
 	}
 
 	@Before
 	public void setUp() {
+		dropFunctionIndex();
+		dropTable();
 		createTable();
 		createFunctionIndex();
 		serviceRegistry = new StandardServiceRegistryBuilder()
@@ -76,16 +80,13 @@ public class SchemaUpdateWithFunctionIndexTest extends BaseNonConfigCoreFunction
 		session.close();
 	}
 
-	@After
-	public void tearDown() {
-		dropFunctionIndex();
-		System.out.println( "********* Starting SchemaExport (drop) for TEAR-DOWN *************************" );
-		SchemaExport schemaExport = new SchemaExport( serviceRegistry, metadata );
-		schemaExport.drop( true, true );
-		System.out.println( "********* Completed SchemaExport (drop) for TEAR-DOWN *************************" );
-
-		StandardServiceRegistryBuilder.destroy( serviceRegistry );
-		serviceRegistry = null;
+	private void dropTable() {
+		Session session = openSession();
+		Transaction transaction = session.beginTransaction();
+		Query query = session.createSQLQuery( "DROP TABLE IF EXISTS MyEntity;" );
+		query.executeUpdate();
+		transaction.commit();
+		session.close();
 	}
 
 	private void dropFunctionIndex() {
@@ -95,6 +96,14 @@ public class SchemaUpdateWithFunctionIndexTest extends BaseNonConfigCoreFunction
 		query.executeUpdate();
 		transaction.commit();
 		session.close();
+	}
+
+	@After
+	public void tearDown() {
+		dropFunctionIndex();
+		dropTable();
+		new SchemaExport().drop( EnumSet.of( TargetType.DATABASE, TargetType.STDOUT ), metadata );
+		StandardServiceRegistryBuilder.destroy( serviceRegistry );
 	}
 
 	@Entity

@@ -22,7 +22,10 @@ import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmNativeQueryScalarReturnType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmQueryParamType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmSynchronizeType;
 import org.hibernate.cfg.SecondPass;
+import org.hibernate.engine.ResultSetMappingDefinition;
+import org.hibernate.engine.query.spi.sql.NativeSQLQueryReturn;
 import org.hibernate.engine.spi.NamedQueryDefinitionBuilder;
+import org.hibernate.engine.spi.NamedSQLQueryDefinition;
 import org.hibernate.engine.spi.NamedSQLQueryDefinitionBuilder;
 import org.hibernate.internal.util.StringHelper;
 
@@ -153,7 +156,7 @@ public class NamedQueryBinder {
 			// returns it defines.  But binding for those entities may have not been
 			// completed yet.  For "normal" ResultSet mappings, this is already handled by
 			// the fact that MetadataSourceProcessor#processResultSetMappings() is called
-			// after all entity hierarchies have been processed.  However, here we are in
+			// afterQuery all entity hierarchies have been processed.  However, here we are in
 			// the middle of processing named-queries (either top-level or entity-level)
 			// and have no guarantee that any entity bindings we may need here are bound.
 			// So we add the second-pass to bind the implicit resultSet mapping.
@@ -164,14 +167,19 @@ public class NamedQueryBinder {
 
 			final ImplicitResultSetMappingDefinition implicitResultSetMappingDefinition = implicitResultSetMappingBuilder.build();
 			builder.setResultSetRef( implicitResultSetMappingDefinition.getName() );
-
 			context.getMetadataCollector().addSecondPass(
 					new SecondPass() {
 						@Override
 						public void doSecondPass(Map persistentClasses) throws MappingException {
-							context.getMetadataCollector().addResultSetMapping(
-									ResultSetMappingBinder.bind( implicitResultSetMappingDefinition, context )
-							);
+							final ResultSetMappingDefinition resultSetMappingDefinition =
+									ResultSetMappingBinder.bind( implicitResultSetMappingDefinition, context );
+							context.getMetadataCollector().addResultSetMapping( resultSetMappingDefinition );
+							NativeSQLQueryReturn[] newQueryReturns = resultSetMappingDefinition.getQueryReturns();
+							final NamedSQLQueryDefinition queryDefinition =
+									context.getMetadataCollector().getNamedNativeQueryDefinition( queryName );
+							if ( queryDefinition != null ) {
+								queryDefinition.addQueryReturns( newQueryReturns );
+							}
 						}
 					}
 			);

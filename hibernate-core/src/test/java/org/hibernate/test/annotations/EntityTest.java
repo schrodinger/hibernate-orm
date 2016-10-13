@@ -6,9 +6,11 @@
  */
 package org.hibernate.test.annotations;
 
+import javax.persistence.PersistenceException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.EnumSet;
 import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.TimeZone;
@@ -22,6 +24,7 @@ import org.hibernate.boot.MetadataBuilder;
 import org.hibernate.boot.model.naming.ImplicitNamingStrategyJpaCompliantImpl;
 import org.hibernate.dialect.Oracle10gDialect;
 import org.hibernate.tool.hbm2ddl.SchemaExport;
+import org.hibernate.tool.schema.TargetType;
 import org.hibernate.type.StandardBasicTypes;
 
 import org.hibernate.testing.SkipForDialect;
@@ -219,7 +222,7 @@ public class EntityTest extends BaseNonConfigCoreFunctionalTestCase {
 			tx.commit();
 			fail( "unique constraints not respected" );
 		}
-		catch (HibernateException e) {
+		catch (PersistenceException e) {
 			//success
 			if ( tx != null ) {
 				tx.rollback();
@@ -271,8 +274,13 @@ public class EntityTest extends BaseNonConfigCoreFunctionalTestCase {
 			tx.commit();
 			fail( "Optimistic locking should work" );
 		}
-		catch (StaleStateException expected) {
-			// expected exception
+		catch (PersistenceException expected) {
+			if ( expected.getCause() instanceof StaleStateException ) {
+				//expected
+			}
+			else {
+				fail( "StaleStateException expected but is " + expected.getCause() );
+			}
 		}
 		finally {
 			if ( tx != null ) {
@@ -431,16 +439,12 @@ public class EntityTest extends BaseNonConfigCoreFunctionalTestCase {
 
 	@Before
 	public void runCreateSchema() {
-		schemaExport().create( false, true );
-	}
-
-	private SchemaExport schemaExport() {
-		return new SchemaExport( serviceRegistry(), metadata() );
+		new SchemaExport().create( EnumSet.of( TargetType.DATABASE ), metadata() );
 	}
 
 	@After
 	public void runDropSchema() {
-		schemaExport().drop( false, true );
+		new SchemaExport().drop( EnumSet.of( TargetType.DATABASE ), metadata() );
 	}
 
 }

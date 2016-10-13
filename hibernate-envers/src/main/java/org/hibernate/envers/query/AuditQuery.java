@@ -9,6 +9,7 @@ package org.hibernate.envers.query;
 import java.util.List;
 import javax.persistence.NoResultException;
 import javax.persistence.NonUniqueResultException;
+import javax.persistence.criteria.JoinType;
 
 import org.hibernate.CacheMode;
 import org.hibernate.FlushMode;
@@ -26,6 +27,11 @@ public interface AuditQuery {
 	List getResultList() throws AuditException;
 
 	Object getSingleResult() throws AuditException, NonUniqueResultException, NoResultException;
+
+	AuditAssociationQuery<? extends AuditQuery> traverseRelation(String associationName, JoinType joinType);
+
+	AuditAssociationQuery<? extends AuditQuery> traverseRelation(String associationName, JoinType joinType,
+			String alias);
 
 	AuditQuery add(AuditCriterion criterion);
 
@@ -50,4 +56,6 @@ public interface AuditQuery {
 	AuditQuery setTimeout(int timeout);
 
 	AuditQuery setLockMode(LockMode lockMode);
+
+	String getAlias();
 }

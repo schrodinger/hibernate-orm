@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Map;
 
 import org.hibernate.AssertionFailure;
 import org.hibernate.FlushMode;
@@ -25,7 +26,7 @@ import org.hibernate.engine.internal.ForeignKeys;
 import org.hibernate.engine.spi.CollectionEntry;
 import org.hibernate.engine.spi.EntityEntry;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
-import org.hibernate.engine.spi.SessionImplementor;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 import org.hibernate.engine.spi.Status;
 import org.hibernate.engine.spi.TypedValue;
 import org.hibernate.internal.CoreLogging;
@@ -54,7 +55,8 @@ import org.hibernate.type.UUIDCharType;
 public abstract class AbstractPersistentCollection implements Serializable, PersistentCollection {
 	private static final CoreMessageLogger LOG = CoreLogging.messageLogger( AbstractPersistentCollection.class );
 
-	private transient SessionImplementor session;
+	private transient SharedSessionContractImplementor session;
+	private boolean isTempSession = false;
 	private boolean initialized;
 	private transient List<DelayedOperation> operationQueue;
 	private transient boolean directlyAccessible;
@@ -79,7 +81,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 	public AbstractPersistentCollection() {
 	}
 
-	protected AbstractPersistentCollection(SessionImplementor session) {
+	protected AbstractPersistentCollection(SharedSessionContractImplementor session) {
 		this.session = session;
 	}
 
@@ -189,14 +191,11 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 	}
 
 	private <T> T withTemporarySessionIfNeeded(LazyInitializationWork<T> lazyInitializationWork) {
-		SessionImplementor originalSession = null;
-		boolean isTempSession = false;
-		boolean isJTA = false;
+		SharedSessionContractImplementor tempSession = null;
 
 		if ( session == null ) {
 			if ( allowLoadOutsideTransaction ) {
-				session = openTemporarySessionForLoading();
-				isTempSession = true;
+				tempSession = openTemporarySessionForLoading();
 			}
 			else {
 				throwLazyInitializationException( "could not initialize proxy - no Session" );
@@ -204,9 +203,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 		}
 		else if ( !session.isOpen() ) {
 			if ( allowLoadOutsideTransaction ) {
-				originalSession = session;
-				session = openTemporarySessionForLoading();
-				isTempSession = true;
+				tempSession = openTemporarySessionForLoading();
 			}
 			else {
 				throwLazyInitializationException( "could not initialize proxy - the owning Session was closed" );
@@ -214,18 +211,23 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 		}
 		else if ( !session.isConnected() ) {
 			if ( allowLoadOutsideTransaction ) {
-				originalSession = session;
-				session = openTemporarySessionForLoading();
-				isTempSession = true;
+				tempSession = openTemporarySessionForLoading();
 			}
 			else {
 				throwLazyInitializationException( "could not initialize proxy - the owning Session is disconnected" );
 			}
 		}
 
-		if ( isTempSession ) {
+		SharedSessionContractImplementor originalSession = null;
+		boolean isJTA = false;
+
+		if ( tempSession != null ) {
+			isTempSession = true;
+			originalSession = session;
+			session = tempSession;
+
 			isJTA = session.getTransactionCoordinator().getTransactionCoordinatorBuilder().isJta();
-			
+
 			if ( !isJTA ) {
 				// Explicitly handle the transactions only if we're not in
 				// a JTA environment.  A lazy loading temporary session can
@@ -245,30 +247,32 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 			return lazyInitializationWork.doWork();
 		}
 		finally {
-			if ( isTempSession ) {
+			if ( tempSession != null ) {
 				// make sure the just opened temp session gets closed!
+				isTempSession = false;
+				session = originalSession;
+
 				try {
 					if ( !isJTA ) {
-						( (Session) session ).getTransaction().commit();
+						( (Session) tempSession ).getTransaction().commit();
 					}
-					( (Session) session ).close();
+					( (Session) tempSession ).close();
 				}
 				catch (Exception e) {
 					LOG.warn( "Unable to close temporary session used to load lazy collection associated to no session" );
 				}
-				session = originalSession;
 			}
 		}
 	}
 
-	private SessionImplementor openTemporarySessionForLoading() {
+	private SharedSessionContractImplementor openTemporarySessionForLoading() {
 		if ( sessionFactoryUuid == null ) {
 			throwLazyInitializationException( "SessionFactory UUID not known to create temporary Session for loading" );
 		}
 
 		final SessionFactoryImplementor sf = (SessionFactoryImplementor)
 				SessionFactoryRegistry.INSTANCE.getSessionFactory( sessionFactoryUuid );
-		final SessionImplementor session = (SessionImplementor) sf.openSession();
+		final SharedSessionContractImplementor session = (SharedSessionContractImplementor) sf.openSession();
 		session.getPersistenceContext().setDefaultReadOnly( true );
 		session.setFlushMode( FlushMode.MANUAL );
 		return session;
@@ -472,6 +476,20 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 	}
 
 	/**
+	 * Replace entity instances with copy in {@code copyCache}/.
+	 *
+	 * @param copyCache - mapping from entity in the process of being
+	 *                    merged to managed copy.
+	 */
+	public final void replaceQueuedOperationValues(CollectionPersister persister, Map copyCache) {
+		for ( DelayedOperation operation : operationQueue ) {
+			if ( ValueDelayedOperation.class.isInstance( operation ) ) {
+				( (ValueDelayedOperation) operation ).replace( persister, copyCache );
+			}
+		}
+	}
+
+	/**
 	 * After reading all existing elements from the database,
 	 * add the queued elements to the underlying collection.
 	 */
@@ -515,7 +533,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 	@Override
 	public boolean afterInitialize() {
 		setInitialized();
-		//do this bit after setting initialized to true or it will recurse
+		//do this bit afterQuery setting initialized to true or it will recurse
 		if ( operationQueue != null ) {
 			performQueuedOperations();
 			operationQueue = null;
@@ -583,10 +601,12 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 	}
 
 	@Override
-	public final boolean unsetSession(SessionImplementor currentSession) {
+	public final boolean unsetSession(SharedSessionContractImplementor currentSession) {
 		prepareForPossibleLoadingOutsideTransaction();
 		if ( currentSession == this.session ) {
-			this.session = null;
+			if ( !isTempSession ) {
+				this.session = null;
+			}
 			return true;
 		}
 		else {
@@ -608,7 +628,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 	}
 
 	@Override
-	public final boolean setCurrentSession(SessionImplementor session) throws HibernateException {
+	public final boolean setCurrentSession(SharedSessionContractImplementor session) throws HibernateException {
 		if ( session == this.session ) {
 			return false;
 		}
@@ -633,7 +653,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 		}
 	}
 
-	private String generateUnexpectedSessionStateMessage(SessionImplementor session) {
+	private String generateUnexpectedSessionStateMessage(SharedSessionContractImplementor session) {
 		// NOTE: If this.session != null, this.session may be operating on this collection
 		// (e.g., by changing this.role, this.key, or even this.session) in a different thread.
 
@@ -683,9 +703,19 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 		// the param would have to be bound twice.  Until we eventually add "parameter bind points" concepts to the
 		// AST in ORM 5+, handling this type of condition is either extremely difficult or impossible.  Forcing
 		// recreation isn't ideal, but not really any other option in ORM 4.
-		if ( persister.getElementType() instanceof CompositeType ) {
-			CompositeType componentType = (CompositeType) persister.getElementType();
-			return !componentType.hasNotNullProperty();
+		// Selecting a type used in where part of update statement
+		// (must match condidion in org.hibernate.persister.collection.BasicCollectionPersister.doUpdateRows).
+		// See HHH-9474
+		Type whereType;
+		if ( persister.hasIndex() ) {
+			whereType = persister.getIndexType();
+		}
+		else {
+			whereType = persister.getElementType();
+		}
+		if ( whereType instanceof CompositeType ) {
+			CompositeType componentIndexType = (CompositeType) whereType;
+			return !componentIndexType.hasNotNullProperty();
 		}
 		return false;
 	}
@@ -696,13 +726,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 			if ( initializing ) {
 				throw new AssertionFailure( "force initialize loading collection" );
 			}
-			if ( session == null ) {
-				throw new HibernateException( "collection is not associated with any session" );
-			}
-			if ( !session.isConnected() ) {
-				throw new HibernateException( "disconnected session" );
-			}
-			session.initializeCollection( this, false );
+			initialize( false );
 		}
 	}
 
@@ -790,7 +814,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 	 *
 	 * @return The session
 	 */
-	public final SessionImplementor getSession() {
+	public final SharedSessionContractImplementor getSession() {
 		return session;
 	}
 
@@ -1115,6 +1139,40 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 		public Object getOrphan();
 	}
 
+	protected interface ValueDelayedOperation extends DelayedOperation {
+		void replace(CollectionPersister collectionPersister, Map copyCache);
+	}
+
+	protected abstract class AbstractValueDelayedOperation implements ValueDelayedOperation {
+		private Object addedValue;
+		private Object orphan;
+
+		protected AbstractValueDelayedOperation(Object addedValue, Object orphan) {
+			this.addedValue = addedValue;
+			this.orphan = orphan;
+		}
+
+		public void replace(CollectionPersister persister, Map copyCache) {
+			if ( addedValue != null ) {
+				addedValue = getReplacement( persister.getElementType(), addedValue, copyCache );
+			}
+		}
+
+		protected final Object getReplacement(Type type, Object current, Map copyCache) {
+			return type.replace( current, null, session, owner, copyCache );
+		}
+
+		@Override
+		public final Object getAddedInstance() {
+			return addedValue;
+		}
+
+		@Override
+		public final Object getOrphan() {
+			return orphan;
+		}
+	}
+
 	/**
 	 * Given a collection of entity instances that used to
 	 * belong to the collection, and a collection of instances
@@ -1125,7 +1183,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 			Collection oldElements,
 			Collection currentElements,
 			String entityName,
-			SessionImplementor session) throws HibernateException {
+			SharedSessionContractImplementor session) throws HibernateException {
 
 		// short-circuit(s)
 		if ( currentElements.size() == 0 ) {
@@ -1198,7 +1256,7 @@ public abstract class AbstractPersistentCollection implements Serializable, Pers
 			Collection list,
 			Object entityInstance,
 			String entityName,
-			SessionImplementor session) {
+			SharedSessionContractImplementor session) {
 
 		if ( entityInstance != null && ForeignKeys.isNotTransient( entityName, entityInstance, null, session ) ) {
 			final EntityPersister entityPersister = session.getFactory().getEntityPersister( entityName );

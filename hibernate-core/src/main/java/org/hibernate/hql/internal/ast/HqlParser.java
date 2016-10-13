@@ -131,7 +131,7 @@ public final class HqlParser extends HqlBaseParser {
 		// If the token can tell us if it could be an identifier...
 		if ( token instanceof HqlToken ) {
 			HqlToken hqlToken = (HqlToken) token;
-			// ... and the token could be an identifer and the error is
+			// ... and the token could be an identifier and the error is
 			// a mismatched token error ...
 			if ( hqlToken.isPossibleID() && ( ex instanceof MismatchedTokenException ) ) {
 				MismatchedTokenException mte = (MismatchedTokenException) ex;
@@ -366,6 +366,30 @@ public final class HqlParser extends HqlBaseParser {
 	}
 
 	@Override
+	public void matchOptionalFrom() throws RecognitionException, TokenStreamException {
+		returnAST = null;
+		ASTPair currentAST = new ASTPair();
+		AST optionalFrom_AST = null;
+
+		if ( LA( 1 ) == FROM ) {
+			if ( LA( 2 ) != DOT ) {
+				match( FROM );
+				optionalFrom_AST = (AST) currentAST.root;
+				returnAST = optionalFrom_AST;
+			}
+		}
+	}
+
+	@Override
+	public void firstPathTokenWeakKeywords() throws TokenStreamException {
+		int t = LA( 1 );
+		switch ( t ){
+			case DOT:
+				LT(0).setType( IDENT );
+		}
+	}
+
+	@Override
 	public void weakKeywords() throws TokenStreamException {
 
 		int t = LA( 1 );
@@ -382,7 +406,7 @@ public final class HqlParser extends HqlBaseParser {
 				}
 				break;
 			default:
-				// Case 2: The current token is after FROM and before '.'.
+				// Case 2: The current token is afterQuery FROM and beforeQuery '.'.
 				if ( LA( 0 ) == FROM && t != IDENT && LA( 2 ) == DOT ) {
 					HqlToken hqlToken = (HqlToken) LT( 1 );
 					if ( hqlToken.isPossibleID() ) {

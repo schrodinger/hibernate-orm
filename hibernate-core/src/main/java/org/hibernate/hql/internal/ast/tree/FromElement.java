@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.hibernate.QueryException;
 import org.hibernate.engine.internal.JoinSequence;
@@ -23,6 +24,7 @@ import org.hibernate.hql.spi.QueryTranslator;
 import org.hibernate.internal.CoreLogging;
 import org.hibernate.internal.CoreMessageLogger;
 import org.hibernate.internal.util.StringHelper;
+import org.hibernate.param.DynamicFilterParameterSpecification;
 import org.hibernate.param.ParameterSpecification;
 import org.hibernate.persister.collection.QueryableCollection;
 import org.hibernate.persister.entity.DiscriminatorMetadata;
@@ -126,7 +128,7 @@ public class FromElement extends HqlSqlWalkerNode implements DisplayableNode, Pa
 		initialized = true;
 	}
 
-	private void doInitialize(
+	protected void doInitialize(
 			FromClause fromClause,
 			String tableAlias,
 			String className,
@@ -400,7 +402,7 @@ public class FromElement extends HqlSqlWalkerNode implements DisplayableNode, Pa
 				ASTUtil.appendSibling( origin, this );
 			}
 			else {
-				if ( !getWalker().isInFrom() && !getWalker().isInSelect() && !getWalker().isInEntityGraph()) {
+				if ( !getWalker().isInFrom() && !getWalker().isInSelect() && !getWalker().isInEntityGraph() ) {
 					getFromClause().addChild( this );
 				}
 				else {
@@ -449,6 +451,19 @@ public class FromElement extends HqlSqlWalkerNode implements DisplayableNode, Pa
 		}
 		if ( origin.getText() == null || "".equals( origin.getText() ) ) {
 			return origin.getRealOrigin();
+		}
+		return origin;
+	}
+
+	public FromElement getFetchOrigin() {
+		if ( origin == null ) {
+			return null;
+		}
+		if ( !origin.isFetch() ) {
+			return origin;
+		}
+		if ( origin.getText() == null || "".equals( origin.getText() ) ) {
+			return origin.getFetchOrigin();
 		}
 		return origin;
 	}
@@ -597,7 +612,9 @@ public class FromElement extends HqlSqlWalkerNode implements DisplayableNode, Pa
 	}
 
 	public boolean isFromOrJoinFragment() {
-		return getType() == SqlTokenTypes.FROM_FRAGMENT || getType() == SqlTokenTypes.JOIN_FRAGMENT;
+		return getType() == SqlTokenTypes.FROM_FRAGMENT
+				|| getType() == SqlTokenTypes.JOIN_FRAGMENT
+				|| getType() == SqlTokenTypes.ENTITY_JOIN;
 	}
 
 	public boolean isAllPropertyFetch() {
@@ -675,24 +692,35 @@ public class FromElement extends HqlSqlWalkerNode implements DisplayableNode, Pa
 
 
 	// ParameterContainer impl ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-	private List<ParameterSpecification> embeddedParameters;
+	private List<ParameterSpecification> embeddedParameters = new ArrayList<>(  );
 
 	@Override
 	public void addEmbeddedParameter(ParameterSpecification specification) {
-		if ( embeddedParameters == null ) {
-			embeddedParameters = new ArrayList<ParameterSpecification>();
-		}
 		embeddedParameters.add( specification );
 	}
 
 	@Override
 	public boolean hasEmbeddedParameters() {
-		return embeddedParameters != null && ! embeddedParameters.isEmpty();
+		return !embeddedParameters.isEmpty();
 	}
 
 	@Override
 	public ParameterSpecification[] getEmbeddedParameters() {
-		return embeddedParameters.toArray( new ParameterSpecification[ embeddedParameters.size() ] );
+		final List<ParameterSpecification> parameterSpecification = getParameterSpecification();
+		return parameterSpecification.toArray( new ParameterSpecification[ parameterSpecification.size() ] );
+	}
+
+	private List<ParameterSpecification> getParameterSpecification() {
+		List<ParameterSpecification> parameterSpecifications =
+			embeddedParameters.stream()
+					.filter( o -> o instanceof  DynamicFilterParameterSpecification )
+					.collect( Collectors.toList() );
+
+		parameterSpecifications.addAll(
+			embeddedParameters.stream()
+					.filter( o -> ! (o instanceof  DynamicFilterParameterSpecification ) )
+					.collect( Collectors.toList() ) );
+		return parameterSpecifications;
 	}
 
 	public ParameterSpecification getIndexCollectionSelectorParamSpec() {
